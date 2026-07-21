@@ -1,0 +1,56 @@
+{
+  "schema_version": "port_traffic_timeseries_v1",
+  "dataset_id": "noaa_marinecadastre_long_beach_2024_01_10_5min",
+  "name": "NOAA MarineCadastre Long Beach traffic aggregates (2024-01-10)",
+  "evidence_level": "historical_public_replay",
+  "live_data_verified": false,
+  "data_file": "../data/noaa_long_beach_2024_01_10_5min.csv",
+  "data_sha256": "c98e4f9b5d0bf0df0e798a767ae30510cbfd6ae021916332fdddf65aa3cadcf4",
+  "source": {
+    "provider": "BOEM, NOAA Office for Coastal Management, U.S. Coast Guard",
+    "catalog": "MarineCadastre.gov AIS",
+    "source_url": "https://coast.noaa.gov/htdata/CMSP/AISDataHandler/2024/AIS_2024_01_10.zip",
+    "catalog_url": "https://coast.noaa.gov/digitalcoast/data/vesseltraffic.html",
+    "data_dictionary_url": "https://coast.noaa.gov/data/marinecadastre/ais/data-dictionary.pdf",
+    "terms_url": "https://coast.noaa.gov/data/marinecadastre/ais/faq.pdf",
+    "license_note": "Derived from U.S. Coast Guard NAIS and free for public use; U.S. Government material is not subject to U.S. copyright. Foreign copyrights may apply.",
+    "use_limitation": "Intended for coastal and ocean planning; not adequate for regulatory or enforcement use.",
+    "source_sha256": "d450fdabbb21b02bd843028accfa8ad2af7d304d46223e71ee53422c32be90a9",
+    "source_rows_scanned": 7024515,
+    "source_rows_in_bbox": 110955,
+    "identity_fields_removed": true,
+    "bbox_wgs84": [-118.35, 33.68, -118.05, 33.88],
+    "aggregation_interval_minutes": 5
+  },
+  "field_mapping": {
+    "timestamp": "five-minute UTC bucket of BaseDateTime",
+    "vessel_count": "unique MMSI count; identities are discarded",
+    "mean_sog_knots": "mean valid SOG",
+    "stopped_ratio": "fraction of messages with SOG below 0.5 knots",
+    "course_dispersion": "one minus circular resultant length of COG",
+    "traffic_density": "vessel_count divided by in-dataset 95th percentile, clipped to one",
+    "position_spread_km": "two-dimensional standard deviation of positions in kilometres"
+  },
+  "split": {
+    "method": "chronological_no_shuffle",
+    "train_ratio": 0.7,
+    "validation_ratio": 0.15,
+    "test_ratio": 0.15,
+    "normalizer_fit": "train_only"
+  },
+  "environment": {
+    "type": "data_calibrated_sandbox",
+    "flow_response": 0.1,
+    "capacity_response": 0.07,
+    "action_slew": 0.35,
+    "target_congestion": 0.38,
+    "counterfactual_note": "AIS contains historical observations, not intervention outcomes. Action response coefficients are explicit sandbox assumptions and must be calibrated with port telemetry before site acceptance."
+  },
+  "reward": {
+    "throughput": 1.0,
+    "congestion": 1.4,
+    "safety": 1.8,
+    "effort": 0.08,
+    "slew": 0.12
+  }
+}

@@ -1,0 +1,33 @@
+name: dt_mobile_app
+description: "Evidence-aware port digital twin client with headless RL training and held-out replay."
+publish_to: 'none'
+
+version: 1.1.0+2
+
+environment:
+  sdk: ^3.10.7
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.9
+
+  # ✅ Riverpod 3.x（统一状态管理）
+  flutter_riverpod: ^3.3.2
+
+  # 网络层
+  dio: ^5.10.0
+  web_socket_channel: ^3.0.3
+
+  # Day 22：离线缓存 v1（小量 JSON / 最近一次快照）
+  shared_preferences: ^2.5.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

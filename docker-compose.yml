@@ -1,0 +1,20 @@
+services:
+  rl-backend:
+    build:
+      context: ./backend
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      PORTAI_APP_ENV: research
+      PORTAI_DATA_MODE: public_replay
+      PORTAI_LIVE_DATA_VERIFIED: "false"
+      PORTAI_EXECUTION_ADAPTER_VERIFIED: "false"
+      PORTAI_HOST: 0.0.0.0
+      PORTAI_ALLOW_BROWSER_LAUNCH: "false"
+      PORTAI_CORS_ORIGINS: http://localhost:8765,http://127.0.0.1:8765
+    volumes:
+      - portai_artifacts:/app/artifacts
+    restart: unless-stopped
+
+volumes:
+  portai_artifacts:

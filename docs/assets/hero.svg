@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="520" viewBox="0 0 1440 520" role="img" aria-labelledby="title desc">
+  <title id="title">PortAI DT Mobile</title>
+  <desc id="desc">Evidence-aware mobile port digital twin with headless policy experiments and held-out replay.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#061126"/><stop offset=".58" stop-color="#0a1f3a"/><stop offset="1" stop-color="#10275a"/></linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#5ee7ff"/><stop offset=".55" stop-color="#5ca8ff"/><stop offset="1" stop-color="#8b79ff"/></linearGradient>
+    <linearGradient id="phone" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#122a4b"/><stop offset="1" stop-color="#071326"/></linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="16" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect width="1440" height="520" rx="30" fill="url(#bg)"/>
+  <circle cx="1240" cy="40" r="220" fill="#7568ff" opacity=".12"/>
+  <circle cx="190" cy="500" r="250" fill="#2bd9d0" opacity=".08"/>
+  <g opacity=".18" stroke="#6fdfff" fill="none"><path d="M0 400 C220 300 380 490 620 374S1030 284 1440 380"/><path d="M0 430 C230 330 405 520 650 400S1040 316 1440 414"/><path d="M1040 0v520M1120 0v520M1200 0v520M1280 0v520M1360 0v520" opacity=".25"/></g>
+  <g transform="translate(76 62)">
+    <text x="0" y="24" fill="#67e4ff" font-family="Inter,Arial,sans-serif" font-size="15" font-weight="700" letter-spacing="4">PORTAI · EVIDENCE-AWARE MOBILE DIGITAL TWIN</text>
+    <text x="0" y="103" fill="#f4f8ff" font-family="Inter,Arial,sans-serif" font-size="62" font-weight="800">PortAI DT Mobile</text>
+    <text x="0" y="151" fill="#b7c9e5" font-family="Inter,Arial,sans-serif" font-size="23">港口态势 · 策略实验 · 独立评估 · 证据回放</text>
+    <text x="0" y="190" fill="#8fa7c8" font-family="Inter,Arial,sans-serif" font-size="17">Situation awareness · headless policy experiments · held-out evaluation · auditable replay</text>
+    <g transform="translate(0 238)" font-family="Inter,Arial,sans-serif">
+      <g><rect width="176" height="74" rx="14" fill="#0d2240" stroke="#24486e"/><text x="18" y="28" fill="#8fa7c8" font-size="13">CONTROL CONTRACT</text><text x="18" y="55" fill="#74f1c5" font-size="21" font-weight="800">4 RL + LOS-PID</text></g>
+      <g transform="translate(190)"><rect width="176" height="74" rx="14" fill="#0d2240" stroke="#24486e"/><text x="18" y="28" fill="#8fa7c8" font-size="13">TEMPORAL SPLITS</text><text x="18" y="55" fill="#74f1c5" font-size="21" font-weight="800">198 / 42 / 43</text></g>
+      <g transform="translate(380)"><rect width="176" height="74" rx="14" fill="#0d2240" stroke="#24486e"/><text x="18" y="28" fill="#8fa7c8" font-size="13">EXECUTION GATE</text><text x="18" y="55" fill="#74f1c5" font-size="21" font-weight="800">FAIL CLOSED</text></g>
+    </g>
+    <g transform="translate(0 348)"><rect width="565" height="2" fill="url(#accent)"/><text y="34" fill="#7892b5" font-family="ui-monospace,monospace" font-size="13">PUBLIC AIS REPLAY  →  HEADLESS TRAIN  →  SHA-256  →  HELD-OUT TEST  →  MOBILE REPLAY</text></g>
+  </g>
+  <g transform="translate(1030 40)" filter="url(#glow)">
+    <rect width="286" height="444" rx="42" fill="#07101d" stroke="#58dfff" stroke-opacity=".55" stroke-width="2"/>
+    <rect x="14" y="14" width="258" height="416" rx="31" fill="url(#phone)"/>
+    <rect x="102" y="24" width="82" height="8" rx="4" fill="#24415e"/>
+    <text x="34" y="77" fill="#f3f8ff" font-family="Inter,Arial,sans-serif" font-size="19" font-weight="800">港口运营决策</text>
+    <rect x="34" y="99" width="218" height="48" rx="12" fill="#122a4a" stroke="#28547a"/><circle cx="55" cy="123" r="6" fill="#ff758f"/><text x="70" y="127" fill="#cfe0f4" font-family="Inter,Arial,sans-serif" font-size="11">历史 AIS 风险指示抬升</text>
+    <rect x="34" y="164" width="218" height="72" rx="14" fill="#11253f" stroke="#24486e"/><text x="50" y="190" fill="#7fdfff" font-family="Inter,Arial,sans-serif" font-size="11">XIAOYI DECISION LINK</text><path d="M50 214 C90 178 123 231 162 198S217 192 236 210" fill="none" stroke="url(#accent)" stroke-width="3"/><circle cx="162" cy="198" r="5" fill="#76f0c7"/>
+    <g transform="translate(34 254)" font-family="Inter,Arial,sans-serif"><rect width="102" height="70" rx="13" fill="#0d2038" stroke="#24486e"/><text x="14" y="27" fill="#8fa7c8" font-size="10">EVIDENCE</text><text x="14" y="50" fill="#75f0c5" font-size="15" font-weight="700">REPLAY</text><rect x="116" width="102" height="70" rx="13" fill="#0d2038" stroke="#24486e"/><text x="130" y="27" fill="#8fa7c8" font-size="10">DISPATCH</text><text x="130" y="50" fill="#ff8aa1" font-size="15" font-weight="700">DISABLED</text></g>
+    <g transform="translate(34 349)"><rect width="218" height="48" rx="12" fill="url(#accent)" opacity=".92"/><text x="109" y="30" text-anchor="middle" fill="#051124" font-family="Inter,Arial,sans-serif" font-size="13" font-weight="800">REVIEW POLICY EVIDENCE</text></g>
+  </g>
+</svg>

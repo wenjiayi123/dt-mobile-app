@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: If you use this software, cite this release and the original public dataset sources listed in the data-source document.
+title: PortAI DT Mobile
+type: software
+authors:
+  - name: PortAI DT Mobile contributors
+version: 1.1.0
+date-released: 2026-07-21
+license: MIT
+repository-code: https://github.com/wenjiayi123/dt-mobile-app
+abstract: Evidence-aware Flutter and FastAPI research stack for mobile port digital twins, headless policy experiments, held-out evaluation, human approval, and auditable replay.
+keywords:
+  - port digital twin
+  - maritime
+  - Flutter
+  - reinforcement learning
+  - control theory
+  - reproducible research

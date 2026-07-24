@@ -14,7 +14,7 @@
 ![Evidence](https://img.shields.io/badge/evidence-historical%20public%20replay-00a884)
 ![Dispatch](https://img.shields.io/badge/production%20dispatch-disabled-c84667)
 
-[中文](#中文) · [English](#english) · [共享后端契约](docs/SHARED_BACKEND_CONTRACT.md) · [双端简历证据](docs/RESUME_CLAIMS_DUAL_FRONTEND.md) · [安全策略](SECURITY.md)
+[双语说明 / Bilingual guide](#双语说明--bilingual-guide) · [共享后端契约 / Shared backend](docs/SHARED_BACKEND_CONTRACT.md) · [双端简历证据 / Evidence](docs/RESUME_CLAIMS_DUAL_FRONTEND.md) · [安全策略 / Security](SECURITY.md)
 </div>
 
 <table>
@@ -26,10 +26,10 @@
     <th align="center">发布测试<br /><sub>RELEASE TESTS</sub></th>
   </tr>
   <tr>
-    <td align="center"><strong>500</strong><br />固定API操作</td>
-    <td align="center"><strong>100%</strong><br />重复/冲突/越权阻断</td>
-    <td align="center"><strong>300 / 300</strong><br />SHA-256链有效</td>
-    <td align="center"><strong>200</strong><br />生产执行回执 0</td>
+    <td align="center"><strong>500</strong><br />固定API操作 / fixed API operations</td>
+    <td align="center"><strong>100%</strong><br />重复/冲突/越权阻断<br /><sub>duplicate/conflict/unauthorized blocks</sub></td>
+    <td align="center"><strong>300 / 300</strong><br />SHA-256链有效 / valid chain</td>
+    <td align="center"><strong>200</strong><br />生产执行回执 0<br /><sub>zero production receipts</sub></td>
     <td align="center"><strong>22 + 19</strong><br />Flutter + backend</td>
   </tr>
 </table>
@@ -41,7 +41,7 @@
 
 ---
 
-## 中文
+## 双语说明 / Bilingual guide
 
 PortAI DT Mobile 是“双端港口智能决策系统”的移动前台，与 Web 前台共同连接
 [`port-dt-multi`](https://github.com/wenjiayi123/port-dt-multi) FastAPI。
@@ -49,23 +49,27 @@ PortAI DT Mobile 是“双端港口智能决策系统”的移动前台，与 We
 Web 端负责数字孪生建模、参数配置、训练评测和策略推演。两端读取同一份
 业务基准、模型登记和服务端审计证据。
 
+PortAI DT Mobile is the Flutter frontend of the dual-frontend port decision system. Together with the Web frontend, it connects to the same [`port-dt-multi`](https://github.com/wenjiayi123/port-dt-multi) FastAPI service. Mobile owns situational awareness, risk review, candidate comparison, human decisions, receipts, and audit replay; Web owns digital-twin modelling, parameter configuration, training/evaluation, and strategy simulation. Both consume the same business benchmark, model registry, and server-side evidence authority.
+
 默认运行于 `public_replay`，生产下发关闭。仓库中的 `backend/portai_rl`
 保留为独立的公开 AIS 算法实验参考，不是双端系统默认后端，也不用于证明
 泊位 +7.45 个百分点 / 待泊 -16.94% / 成本 -11.80% 的系统级业务结果。
 
-### 为什么它不只是一个移动端 Demo
+The default mode is `public_replay`, with production dispatch disabled. `backend/portai_rl` is retained as an independent public-AIS algorithm experiment; it is not the dual-frontend system’s default backend and does not support the system-level berth +7.45 percentage-point / waiting −16.94% / cost −11.80% claims.
 
-| 层级 | 已实现能力 | 可核验证据 |
+### 为什么它不只是一个移动端 Demo / Why it is more than a mobile demo
+
+| 层级 / Layer | 已实现能力 / Implemented capability | 可核验证据 / Verifiable evidence |
 |---|---|---|
-| 移动数字孪生 | 态势、三维孪生、设备、策略、告警、审计的联动导航 | Flutter 页面、状态控制器与 22 项客户端测试 |
-| 双端一致性 | Web / Flutter 读取相同后端身份、KPI报告、候选与回执 | `/api/mobile/status` 与稳定契约 |
-| 算法与评测 | SAC、PPO、TD3、DQN 与 MPC；训练不渲染、测试独立 | 共享后端训练器、模型登记、留出集产物 |
-| 业务证据 | 52,608 条小时驱动记录、35,064/8,784/8,760 时序切分、2025 全年测试 | 固定业务报告、数据/配置/证据 SHA-256 |
-| 人机治理 | 移动申请、电脑端异人审批、幂等表态、服务端回执 | 申请人与审批人分离、原子证据、审计前向链 |
-| 移动可靠性 | 500项固定集成操作 | 幂等/越权阻断100%，300条审计事件链通过 |
-| 失效安全 | 移动表态不直达设备，南向执行单独受控 | 白名单、约束、异人确认与独立通道 |
+| 移动数字孪生 / Mobile twin | 态势、三维孪生、设备、策略、告警、审计的联动导航<br><sub>Linked navigation across situation, 3D twin, equipment, policy, alerts, and audit</sub> | Flutter 页面、状态控制器与 22 项客户端测试<br><sub>Flutter surfaces, state controllers, and 22 client tests</sub> |
+| 双端一致性 / Cross-frontend consistency | Web / Flutter 读取相同后端身份、KPI报告、候选与回执<br><sub>Web and Flutter read the same backend identity, KPI report, candidates, and receipts</sub> | `/api/mobile/status` 与稳定契约<br><sub>`/api/mobile/status` and a stable contract</sub> |
+| 算法与评测 / Algorithms & evaluation | SAC、PPO、TD3、DQN 与 MPC；训练不渲染、测试独立<br><sub>SAC, PPO, TD3, DQN, and MPC; headless training with independent testing</sub> | 共享后端训练器、模型登记、留出集产物<br><sub>Shared trainer, registry, and holdout artifacts</sub> |
+| 业务证据 / Business evidence | 52,608 条小时驱动记录、35,064/8,784/8,760 时序切分、2025 全年测试<br><sub>52,608 hourly drivers, 35,064/8,784/8,760 temporal split, and a full 2025 test</sub> | 固定业务报告、数据/配置/证据 SHA-256<br><sub>Pinned report and data/config/evidence SHA-256</sub> |
+| 人机治理 / Human governance | 移动申请、电脑端异人审批、幂等表态、服务端回执<br><sub>Mobile request, different desktop approver, idempotent decision, server receipt</sub> | 申请人与审批人分离、原子证据、审计前向链<br><sub>Requester/approver separation, atomic evidence, forward audit chain</sub> |
+| 移动可靠性 / Mobile reliability | 500项固定集成操作<br><sub>500 fixed integration operations</sub> | 幂等/越权阻断100%，300条审计事件链通过<br><sub>100% idempotency/authorization blocking; 300-event audit chain passes</sub> |
+| 失效安全 / Fail-safe behavior | 移动表态不直达设备，南向执行单独受控<br><sub>A mobile decision never reaches equipment directly</sub> | 白名单、约束、异人确认与独立通道<br><sub>Allowlist, bounds, four-eyes confirmation, and separate channel</sub> |
 
-### 系统链路
+### 系统链路 / System workflow
 
 ```mermaid
 flowchart LR
@@ -79,9 +83,10 @@ flowchart LR
   B --> I["Separate /api/actuators gate<br/>whitelist · constraints · two-person"]
 ```
 
-关键边界：`TRAIN render_mode=None → 模型与历史哈希 → 训练进程结束 → held-out TEST → 记录轨迹 → 客户端回放`。
+关键边界：`TRAIN render_mode=None → 模型与历史哈希 → 训练进程结束 → held-out TEST → 记录轨迹 → 客户端回放`。<br>
+Critical boundary: `TRAIN render_mode=None → model and history hashes → training process exits → held-out TEST → recorded trajectory → client replay`.
 
-### 真实界面
+### 真实界面 / Product surfaces
 
 <table>
   <tr>
@@ -89,24 +94,25 @@ flowchart LR
     <td width="42%"><img src="docs/assets/human-training-gate.png" alt="Human-gated policy experiment page" /></td>
   </tr>
   <tr>
-    <td><b>移动运营控制面</b><br/>历史 AIS 证据标签、态势入口、小懿决策联动、告警与审计状态。</td>
-    <td><b>独立实验审批门禁</b><br/>数据证据、五基线合同、时间切分、执行权与待审批实验同屏复核。</td>
+    <td><b>移动运营控制面 / Mobile operations surface</b><br/>历史 AIS 证据标签、态势入口、小懿决策联动、告警与审计状态。<br/><sub>Historical-AIS evidence labels, situation entry points, Xiaoyi linkage, alerts, and audit state.</sub></td>
+    <td><b>独立实验审批门禁 / Independent experiment gate</b><br/>数据证据、五基线合同、时间切分、执行权与待审批实验同屏复核。<br/><sub>One-screen review of data evidence, five-method contract, temporal split, authority, and pending experiment.</sub></td>
   </tr>
 </table>
 
-### 共享后端五算法
+### 共享后端五算法 / Five shared-backend methods
 
-| 基线 | 实现 | 动作空间 | 在仓库中的角色 |
+| 基线 / Baseline | 实现 / Implementation | 动作空间 / Action space | 在仓库中的角色 / Role |
 |---|---|---|---|
-| PPO | Stable-Baselines3 | 连续 | on-policy 策略梯度基线 |
-| SAC | Stable-Baselines3 | 连续 | 最大熵 off-policy 基线 |
-| TD3 | Stable-Baselines3 | 连续 | 双延迟确定性策略基线 |
-| DQN | Stable-Baselines3 | 离散 | 离散策略对照基线 |
-| MPC | SciPy 约束优化 | 连续约束 | 滚动时域控制基线 |
+| PPO | Stable-Baselines3 | 连续 / continuous | on-policy 策略梯度基线 / on-policy policy-gradient baseline |
+| SAC | Stable-Baselines3 | 连续 / continuous | 最大熵 off-policy 基线 / maximum-entropy off-policy baseline |
+| TD3 | Stable-Baselines3 | 连续 / continuous | 双延迟确定性策略基线 / twin-delayed deterministic baseline |
+| DQN | Stable-Baselines3 | 离散 / discrete | 离散策略对照基线 / discrete policy comparator |
+| MPC | SciPy 约束优化 / constrained optimization | 连续约束 / constrained continuous | 滚动时域控制基线 / receding-horizon control baseline |
 
-短步数 `smoke` 只验证数据、训练、测试和产物接线，不证明收敛、优越性或现场适用性。正式比较必须固定数据哈希、环境版本、种子、预算和评价口径，并保留完整产物。
+短步数 `smoke` 只验证数据、训练、测试和产物接线，不证明收敛、优越性或现场适用性。正式比较必须固定数据哈希、环境版本、种子、预算和评价口径，并保留完整产物。<br>
+A short `smoke` run verifies only data, training, evaluation, and artifact wiring; it does not prove convergence, superiority, or site applicability. A formal comparison must pin the data hash, environment version, seeds, budget, evaluation protocol, and complete artifacts.
 
-### 数据与可替换港口契约
+### 数据与可替换港口契约 / Data and replaceable-port contract
 
 双端系统业务基准使用共享后端的 `public_port_ops_v1`：以 MPA 新加坡
 2020–2025 官方月度吞吐量和集装箱船到港量为锚点构造 52,608 条小时驱动记录，
@@ -115,22 +121,29 @@ flowchart LR
 （+7.45 个百分点），平均待泊时间缩短 16.94%、情景用电成本降低 11.80%。
 这些是公开输入驱动的数字孪生结果，不是港口实测 KPI。
 
+The shared backend benchmark `public_port_ops_v1` anchors 52,608 hourly driver records to official MPA Singapore monthly throughput and container-vessel arrivals for 2020–2025, split chronologically into 35,064 train, 8,784 validation, and 8,760 test records. On the 2025 holdout, effective berth utilization rises from 83.63% to 91.09% (+7.45 percentage points), mean waiting time falls 16.94%, and scenario energy cost falls 11.80% against static FCFS plus a fixed energy schedule. These are public-input-driven digital-twin results, not measured terminal KPIs.
+
 本仓库独立实验后端另带一份 NOAA / MarineCadastre 长滩邻近历史 AIS 样本，
 只用于算法接线研究；它与上述系统业务指标是两套证据，不混合计算。
 
-接入另一个港口不需要重写算法层：
+The optional standalone backend bundles a separate historical NOAA/MarineCadastre AIS sample near Long Beach for algorithm-wiring research only. It is a different evidence set and is never mixed into the system business benchmark.
 
-1. 将源数据映射到 [`port_traffic_timeseries_v1`](docs/DATASET_CONTRACT.md)。
-2. 新建 manifest，记录字段映射、来源、数据 SHA-256、证据等级和沙箱响应参数。
-3. 设置 `PORTAI_DATASET_MANIFEST=/absolute/path/to/manifest.json`。
-4. 通过 `/api/data/status` 核对哈希、范围和时间切分。
-5. 数据、环境或奖励合同变化后重新训练；旧模型会被拒绝测试。
+接入另一个港口不需要重写算法层：<br>
+Connecting another port does not require rewriting the algorithm layer:
 
-[`scripts/import_noaa_ais.py`](scripts/import_noaa_ais.py) 是公开 AIS 转换参考。TOS、ECS、VTS 或现场遥测仍需港口专属适配、标定和独立验收，不能靠字段改名获得生产可信度。
+1. 将源数据映射到 [`port_traffic_timeseries_v1`](docs/DATASET_CONTRACT.md)。 / Map source data to [`port_traffic_timeseries_v1`](docs/DATASET_CONTRACT.md).
+2. 新建 manifest，记录字段映射、来源、数据 SHA-256、证据等级和沙箱响应参数。 / Create a manifest recording mapping, provenance, data SHA-256, evidence level, and sandbox-response parameters.
+3. 设置 `PORTAI_DATASET_MANIFEST=/absolute/path/to/manifest.json`。 / Set `PORTAI_DATASET_MANIFEST=/absolute/path/to/manifest.json`.
+4. 通过 `/api/data/status` 核对哈希、范围和时间切分。 / Verify hash, coverage, and temporal split through `/api/data/status`.
+5. 数据、环境或奖励合同变化后重新训练；旧模型会被拒绝测试。 / Retrain after any data, environment, or reward-contract change; stale models are rejected at evaluation.
 
-### 快速开始
+[`scripts/import_noaa_ais.py`](scripts/import_noaa_ais.py) 是公开 AIS 转换参考。TOS、ECS、VTS 或现场遥测仍需港口专属适配、标定和独立验收，不能靠字段改名获得生产可信度。<br>
+[`scripts/import_noaa_ais.py`](scripts/import_noaa_ais.py) is the public-AIS conversion reference. TOS, ECS, VTS, and site telemetry still require port-specific adaptation, calibration, and independent acceptance; renaming fields cannot create production credibility.
 
-要求：Flutter `3.38.x` / Dart `3.10.x`，Python `3.12–3.14`。建议使用隔离环境。
+### 快速开始 / Quick start
+
+要求：Flutter `3.38.x` / Dart `3.10.x`，Python `3.12–3.14`。建议使用隔离环境。<br>
+Requirements: Flutter `3.38.x` / Dart `3.10.x`, Python `3.12–3.14`. Use isolated environments.
 
 ```bash
 git clone https://github.com/wenjiayi123/port-dt-multi.git
@@ -141,7 +154,8 @@ python -m pip install -r requirements.txt
 python -m uvicorn app.server:app --host 127.0.0.1 --port 8000
 ```
 
-另开终端启动 Flutter：
+另开终端启动 Flutter：<br>
+Start Flutter in another terminal:
 
 ```bash
 git clone https://github.com/wenjiayi123/dt-mobile-app.git
@@ -152,32 +166,36 @@ flutter run -d chrome \
   --dart-define=APP_ENV=public_replay
 ```
 
-在“策略”页选择基线和实验预算，提交申请；电脑端打开 `http://127.0.0.1:8000/rl-panel`，由不同操作者批准后才创建本地实验进程。
+在“策略”页选择基线和实验预算，提交申请；电脑端打开 `http://127.0.0.1:8000/rl-panel`，由不同操作者批准后才创建本地实验进程。<br>
+Choose a baseline and experiment budget on the Policy page and submit a request. A different operator must approve it from `http://127.0.0.1:8000/rl-panel` before the local experiment process can be created.
 
-Docker 方式：
+Docker 方式：<br>
+Docker:
 
 ```bash
 docker compose up --build
 ```
 
-### 验证门禁
+### 验证门禁 / Verification gates
 
 指标、测试与双端共享证据的对应关系见
 [`docs/EVIDENCE_INDEX.md`](docs/EVIDENCE_INDEX.md)。
 
+See [`docs/EVIDENCE_INDEX.md`](docs/EVIDENCE_INDEX.md) for the mapping among metrics, tests, and dual-frontend evidence.
+
 ```bash
-# Flutter：格式、静态分析与测试
+# Flutter：格式、静态分析与测试 / format, analyze, and test
 bash scripts/check.sh
 
-# Python：编译与 API / 训练合同测试
+# Python：编译与 API / 训练合同测试 / compile and contract tests
 python3.12 -m venv backend/.venv
 backend/.venv/bin/python -m pip install -r backend/requirements.txt
 bash scripts/check_backend.sh
 
-# 五基线 128 步接线验证；smoke_only=true
+# 五基线128步接线验证 / 128-step five-method wiring check; smoke_only=true
 backend/.venv/bin/python scripts/smoke_all_baselines.py --timesteps 128
 
-# 上述门禁 + 数据边界与禁用伪造指标检查
+# 发布门禁 / gates above plus data-boundary and fabricated-metric checks
 bash scripts/release_check.sh
 ```
 
@@ -185,86 +203,38 @@ bash scripts/release_check.sh
 SAC / PPO / TD3 / DQN / MPC 与500项移动闭环操作；独立 AIS 实验后端的
 短步数 smoke 仅保留为算法接线证据。
 
-### 生产门禁与安全边界
+Current mobile baseline: Flutter analysis and 22 client tests pass. The shared backend separately verifies SAC/PPO/TD3/DQN/MPC and 500 mobile closed-loop operations. The standalone AIS backend’s short smoke run is retained only as wiring evidence.
 
-默认 `production_dispatch_enabled=false`。生产适配至少要求：
+### 生产门禁与安全边界 / Production gates and safety boundary
 
-- `PORTAI_DATA_MODE=live` 与经过验证的实时数据网关；
-- `PORTAI_LIVE_DATA_VERIFIED=true`；
-- `PORTAI_EXECUTION_ADAPTER_VERIFIED=true` 与专属执行适配器；
-- 32 字符以上 API 密钥、严格 CORS、站点联锁、最小权限凭证与独立验收。
+默认 `production_dispatch_enabled=false`。生产适配至少要求：<br>
+The default is `production_dispatch_enabled=false`. Production adaptation requires at least:
 
-任一条件缺失都只写入 dry-run 审计，不会下发现场动作。本仓库不是经认证的船舶导航、避碰、VTS、监管执法或自动驾驶系统，不应直接用于真实船舶决策。
+- `PORTAI_DATA_MODE=live` 与经过验证的实时数据网关 / a verified live-data gateway;
+- `PORTAI_LIVE_DATA_VERIFIED=true`;
+- `PORTAI_EXECUTION_ADAPTER_VERIFIED=true` 与专属执行适配器 / a dedicated execution adapter;
+- 32 字符以上 API 密钥、严格 CORS、站点联锁、最小权限凭证与独立验收 / a 32+ character API key, strict CORS, site interlocks, least-privilege credentials, and independent acceptance.
 
-### 仓库结构
+任一条件缺失都只写入 dry-run 审计，不会下发现场动作。本仓库不是经认证的船舶导航、避碰、VTS、监管执法或自动驾驶系统，不应直接用于真实船舶决策。<br>
+If any gate is missing, the request produces only a dry-run audit record and never dispatches a site action. This repository is not certified navigation, collision avoidance, VTS, regulatory-enforcement, or autonomous-driving software and must not directly control real-vessel decisions.
+
+### 仓库结构 / Repository map
 
 ```text
-lib/                         Flutter 移动控制面、状态与数据源
-backend/portai_rl/           可选的独立 AIS 实验参考（非系统默认后端）
-backend/config/              可审计数据 manifest
-backend/data/                去标识化公开 AIS 聚合样本
-scripts/                     启动、导入、测试与发布门禁
-test/                        Flutter 合同和界面测试
-backend/tests/               API、隔离、哈希和安全边界测试
-docs/                        方法、数据、接口、演示和安全文档
+lib/                         Flutter移动控制面、状态与数据源 / Flutter surface, state, data sources
+backend/portai_rl/           可选AIS实验参考 / optional AIS experiment; not the default backend
+backend/config/              可审计数据manifest / auditable manifests
+backend/data/                去标识化公开AIS聚合样本 / de-identified public-AIS aggregate
+scripts/                     启动、导入、测试与发布门禁 / launch, import, test, release gates
+test/                        Flutter合同和界面测试 / Flutter contract and UI tests
+backend/tests/               API、隔离、哈希和安全测试 / API, isolation, hash, safety tests
+docs/                        方法、数据、接口与安全文档 / methodology, data, API, safety docs
 ```
 
 ---
 
-## English
+## 许可证、数据与引用 / License, data, and citation
 
-PortAI DT Mobile is the Flutter frontend of the dual-frontend port decision
-system. It connects to the same `port-dt-multi` FastAPI service as the Web
-frontend for system identity, business evidence, registered policy candidates,
-human decisions, receipts, and audit verification. The bundled AIS experiment
-backend is an optional standalone research reference, not the default system
-backend.
+代码使用 [MIT License](LICENSE)。数据来源与限制单独记录在 [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md)；软件许可证不会覆盖源数据条款，也不授予任何运营批准。学术使用本架构或实验契约时，请引用 [`CITATION.cff`](CITATION.cff)。
 
-It is deliberately not presented as a production port controller. The default dataset is an aggregated historical replay derived from public NOAA / MarineCadastre AIS. Environment action responses are declared sandbox assumptions, and production dispatch fails closed unless independently verified live-data and execution-adapter gates are both enabled.
-
-### What is implemented
-
-- **Linked operational surfaces:** situation, 3D twin, equipment, risk, scheduling, policy, alerts, evidence replay, audit, and Xiaoyi-assisted navigation share application state rather than existing as isolated mock screens.
-- **Governed data contract:** source locator, bounding box, time range, de-identification statement, field mapping, schema version, and SHA-256 are carried in the dataset manifest.
-- **Shared five-controller contract:** SAC, PPO, TD3, DQN, and constrained MPC are owned by the Web backend.
-- **Evaluation isolation:** chronological 70/15/15 splits, train-only normalization, a process boundary after training, and test-only recorded trajectories prevent the client from presenting training animation as evaluation evidence.
-- **Artifact lineage:** policy, training history, dataset, environment, and rollout identifiers are retained for replay and review.
-- **Human-gated execution:** mobile requests do not start a job until a different desktop operator approves them. Request size, identifiers, concurrency, parameters, credentials, and production gates are bounded or validated.
-- **Tamper-evident audit:** server-side JSONL records use a SHA-256 forward chain. This provides tamper evidence, not an external timestamp or immutable ledger.
-
-### Reproducible research sequence
-
-```text
-public inputs + declared engineering derivatives
-  → shared backend dataset and evidence hashes
-  → chronological TRAIN / VALIDATION / TEST split
-  → headless SAC / PPO / TD3 / DQN or constrained MPC
-  → separate held-out evaluation
-  → registered candidate + human decision
-  → idempotent receipt + SHA-256 audit chain
-  → evidence-labelled Flutter presentation
-```
-
-The bundled example contains 283 five-minute intervals split into 198 train, 42 validation, and 43 held-out test rows. Validation is preserved as a separate temporal segment; it is not silently merged into training. See [RL methodology](docs/RL_METHODOLOGY.md) for the exact contract and limitations.
-
-### Run, test, and extend
-
-Use the commands in [Quick start](#快速开始), then consult:
-
-- [Dataset contract](docs/DATASET_CONTRACT.md) for port substitution;
-- [Backend contract](docs/BACKEND_CONTRACT.md) for API and WebSocket semantics;
-- [RL methodology](docs/RL_METHODOLOGY.md) for train/test separation;
-- [Data sources](docs/DATA_SOURCES.md) for provenance and permitted interpretation;
-- [Testing](docs/TESTING.md) for verification scope;
-- [Security policy](SECURITY.md) for deployment gates and reporting;
-- [Contributing](CONTRIBUTING.md) and [governance](GOVERNANCE.md) for project workflow.
-
-### Scope statement
-
-This repository is a research, teaching, and software-verification project. It does not claim policy convergence, superiority over established control, real-time telemetry coverage, production dispatch authority, regulatory suitability, or navigational certification. Any deployment involving real port or vessel operations requires site-specific data agreements, calibration, safety engineering, authenticated adapters, interlocks, independent acceptance, and accountable human authority.
-
-## License and data terms
-
-Code is released under the [MIT License](LICENSE). Dataset provenance and limitations are documented separately in [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md); the software license does not override source-data terms or grant operational approval.
-
-If you use the architecture or experiment contract in academic work, see [`CITATION.cff`](CITATION.cff).
+Code is released under the [MIT License](LICENSE). Dataset provenance and limitations are documented separately in [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md); the software license does not override source-data terms or grant operational approval. Cite [`CITATION.cff`](CITATION.cff) when using the architecture or experiment contract in academic work.

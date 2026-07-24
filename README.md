@@ -17,6 +17,28 @@
 [中文](#中文) · [English](#english) · [共享后端契约](docs/SHARED_BACKEND_CONTRACT.md) · [双端简历证据](docs/RESUME_CLAIMS_DUAL_FRONTEND.md) · [安全策略](SECURITY.md)
 </div>
 
+<table>
+  <tr>
+    <th align="center">固定闭环操作<br /><sub>FIXED WORKFLOW OPS</sub></th>
+    <th align="center">幂等与越权阻断<br /><sub>FAIL-CLOSED GATES</sub></th>
+    <th align="center">审计事件<br /><sub>AUDIT CHAIN</sub></th>
+    <th align="center">唯一服务端回执<br /><sub>UNIQUE RECEIPTS</sub></th>
+    <th align="center">发布测试<br /><sub>RELEASE TESTS</sub></th>
+  </tr>
+  <tr>
+    <td align="center"><strong>500</strong><br />固定API操作</td>
+    <td align="center"><strong>100%</strong><br />重复/冲突/越权阻断</td>
+    <td align="center"><strong>300 / 300</strong><br />SHA-256链有效</td>
+    <td align="center"><strong>200</strong><br />生产执行回执 0</td>
+    <td align="center"><strong>22 + 19</strong><br />Flutter + backend</td>
+  </tr>
+</table>
+
+<p align="center">
+  <sub>与Web端共享同一业务证据和FastAPI决策后端；移动端证明的是人机闭环、回执语义与失效安全，不重复制造另一组“移动端业务收益”。</sub><br />
+  <sub>The mobile frontend shares one evidence authority with the Web system and proves human-gated workflow semantics—not a duplicate set of business gains.</sub>
+</p>
+
 ---
 
 ## 中文
@@ -35,7 +57,7 @@ Web 端负责数字孪生建模、参数配置、训练评测和策略推演。�
 
 | 层级 | 已实现能力 | 可核验证据 |
 |---|---|---|
-| 移动数字孪生 | 态势、三维孪生、设备、策略、告警、审计的联动导航 | Flutter 页面、状态控制器与 18 项客户端测试 |
+| 移动数字孪生 | 态势、三维孪生、设备、策略、告警、审计的联动导航 | Flutter 页面、状态控制器与 22 项客户端测试 |
 | 双端一致性 | Web / Flutter 读取相同后端身份、KPI报告、候选与回执 | `/api/mobile/status` 与稳定契约 |
 | 算法与评测 | SAC、PPO、TD3、DQN 与 MPC；训练不渲染、测试独立 | 共享后端训练器、模型登记、留出集产物 |
 | 业务证据 | 52,608 条小时驱动记录、35,064/8,784/8,760 时序切分、2025 全年测试 | 固定业务报告、数据/配置/证据 SHA-256 |
@@ -159,7 +181,7 @@ backend/.venv/bin/python scripts/smoke_all_baselines.py --timesteps 128
 bash scripts/release_check.sh
 ```
 
-当前移动端基线：Flutter analyze 通过，18项客户端测试通过。共享后端另验证
+当前移动端基线：Flutter analyze 通过，22项客户端测试通过。共享后端另验证
 SAC / PPO / TD3 / DQN / MPC 与500项移动闭环操作；独立 AIS 实验后端的
 短步数 smoke 仅保留为算法接线证据。
 

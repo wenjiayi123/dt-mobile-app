@@ -17,11 +17,11 @@
     <text x="0" y="151" fill="#b7c9e5" font-family="Inter,Arial,sans-serif" font-size="23">港口态势 · 策略实验 · 独立评估 · 证据回放</text>
     <text x="0" y="190" fill="#8fa7c8" font-family="Inter,Arial,sans-serif" font-size="17">Situation awareness · headless policy experiments · held-out evaluation · auditable replay</text>
     <g transform="translate(0 238)" font-family="Inter,Arial,sans-serif">
-      <g><rect width="176" height="74" rx="14" fill="#0d2240" stroke="#24486e"/><text x="18" y="28" fill="#8fa7c8" font-size="13">CONTROL CONTRACT</text><text x="18" y="55" fill="#74f1c5" font-size="21" font-weight="800">4 RL + LOS-PID</text></g>
-      <g transform="translate(190)"><rect width="176" height="74" rx="14" fill="#0d2240" stroke="#24486e"/><text x="18" y="28" fill="#8fa7c8" font-size="13">TEMPORAL SPLITS</text><text x="18" y="55" fill="#74f1c5" font-size="21" font-weight="800">198 / 42 / 43</text></g>
+      <g><rect width="176" height="74" rx="14" fill="#0d2240" stroke="#24486e"/><text x="18" y="28" fill="#8fa7c8" font-size="13">CONTROL CONTRACT</text><text x="18" y="55" fill="#74f1c5" font-size="21" font-weight="800">4 RL + MPC</text></g>
+      <g transform="translate(190)"><rect width="176" height="74" rx="14" fill="#0d2240" stroke="#24486e"/><text x="18" y="28" fill="#8fa7c8" font-size="13">SHARED EVIDENCE</text><text x="18" y="55" fill="#74f1c5" font-size="21" font-weight="800">52,608 HOURS</text></g>
       <g transform="translate(380)"><rect width="176" height="74" rx="14" fill="#0d2240" stroke="#24486e"/><text x="18" y="28" fill="#8fa7c8" font-size="13">EXECUTION GATE</text><text x="18" y="55" fill="#74f1c5" font-size="21" font-weight="800">FAIL CLOSED</text></g>
     </g>
-    <g transform="translate(0 348)"><rect width="565" height="2" fill="url(#accent)"/><text y="34" fill="#7892b5" font-family="ui-monospace,monospace" font-size="13">PUBLIC AIS REPLAY  →  HEADLESS TRAIN  →  SHA-256  →  HELD-OUT TEST  →  MOBILE REPLAY</text></g>
+    <g transform="translate(0 348)"><rect width="565" height="2" fill="url(#accent)"/><text y="34" fill="#7892b5" font-family="ui-monospace,monospace" font-size="13">TWIN MODEL  →  POLICY CANDIDATE  →  HUMAN GATE  →  RECEIPT  →  AUDIT REPLAY</text></g>
   </g>
   <g transform="translate(1030 40)" filter="url(#glow)">
     <rect width="286" height="444" rx="42" fill="#07101d" stroke="#58dfff" stroke-opacity=".55" stroke-width="2"/>

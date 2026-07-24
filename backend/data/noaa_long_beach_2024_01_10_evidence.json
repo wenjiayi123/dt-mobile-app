@@ -1,0 +1,15 @@
+{
+  "source_sha256": "d450fdabbb21b02bd843028accfa8ad2af7d304d46223e71ee53422c32be90a9",
+  "source_rows_scanned": 7024515,
+  "source_rows_in_bbox": 110955,
+  "output_intervals": 283,
+  "aggregation_interval_minutes": 5,
+  "bbox_wgs84": [
+    -118.35,
+    33.68,
+    -118.05,
+    33.88
+  ],
+  "identity_fields_removed": true,
+  "output_sha256": "59d2369cb5366bd2ad2ba479ee914773091e5ea8c53a0a24ac2ab0f4eb248cd0"
+}

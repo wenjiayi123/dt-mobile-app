@@ -395,7 +395,7 @@ class AuditTimelineNotifier extends Notifier<AuditTimeline> {
 
   Future<void> _restoreCachedTimeline() async {
     final cached = await _readCache();
-    if (cached == null) return;
+    if (cached == null || !ref.mounted) return;
     state = cached;
   }
 
@@ -555,7 +555,10 @@ class AuditTimelineNotifier extends Notifier<AuditTimeline> {
   }
 
   Future<void> _attemptUpload(AuditEvent event) async {
-    final result = await _repository.upload(event);
+    // Capture the repository before the first async gap. The notifier may be
+    // disposed while a page is closing or a test container is torn down.
+    final repository = _repository;
+    final result = await repository.upload(event);
 
     if (result.status == AuditUploadStatus.notConfigured) {
       final updated = event.copyWith(
@@ -565,7 +568,8 @@ class AuditTimelineNotifier extends Notifier<AuditTimeline> {
           uploadMessage: result.message,
         ),
       );
-      await _repository.updateLocal(updated);
+      await repository.updateLocal(updated);
+      if (!ref.mounted) return;
       _replaceEvent(updated);
       return;
     }
@@ -582,7 +586,8 @@ class AuditTimelineNotifier extends Notifier<AuditTimeline> {
       ),
     );
 
-    await _repository.updateLocal(updated);
+    await repository.updateLocal(updated);
+    if (!ref.mounted) return;
     _replaceEvent(updated);
   }
 

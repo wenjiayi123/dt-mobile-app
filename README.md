@@ -3,8 +3,8 @@
 
 # PortAI DT Mobile
 
-**数字孪生 AI 港口智能决策系统的 Flutter 移动前台**<br>
-**The Flutter operations and human-decision frontend of the dual-frontend port digital twin**
+<strong>数字孪生 AI 港口智能决策系统的 Flutter 移动前台</strong><br>
+<strong>The Flutter operations and human-decision frontend of the dual-frontend port digital twin</strong>
 
 [![CI](https://github.com/wenjiayi123/dt-mobile-app/actions/workflows/ci.yml/badge.svg)](https://github.com/wenjiayi123/dt-mobile-app/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f.svg)](LICENSE)

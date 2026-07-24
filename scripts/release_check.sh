@@ -2,17 +2,54 @@
 set -euo pipefail
 
 project_dir="$(cd "$(dirname "$0")/.." && pwd)"
-python_bin="${PORTAI_PYTHON:-python3}"
+if [[ -n "${PORTAI_PYTHON:-}" ]]; then
+  python_bin="$PORTAI_PYTHON"
+elif [[ -x "$project_dir/backend/.venv/bin/python" ]]; then
+  python_bin="$project_dir/backend/.venv/bin/python"
+elif [[ -x "$project_dir/.venv/bin/python" ]]; then
+  python_bin="$project_dir/.venv/bin/python"
+else
+  python_bin="$(command -v python3 || true)"
+fi
 
 cd "$project_dir"
+if [[ -z "$python_bin" ]] || ! "$python_bin" -c 'import gymnasium, numpy, pytest, stable_baselines3' >/dev/null 2>&1; then
+  cat >&2 <<'EOF'
+release check failed: the isolated Python verification environment is missing.
+Create it with:
+  python3.12 -m venv backend/.venv
+  backend/.venv/bin/python -m pip install -r backend/requirements.txt
+Then rerun:
+  bash scripts/release_check.sh
+EOF
+  exit 1
+fi
+export PORTAI_PYTHON="$python_bin"
+
 for required_doc in \
   docs/SHARED_BACKEND_CONTRACT.md \
+  docs/EVIDENCE_INDEX.md \
   docs/RESUME_CLAIMS_DUAL_FRONTEND.md; do
   if [[ ! -f "$required_doc" ]]; then
     echo "release check failed: missing dual-frontend evidence: $required_doc" >&2
     exit 1
   fi
 done
+
+for required_font_asset in \
+  assets/fonts/PortAISansSC.ttf \
+  assets/fonts/OFL.txt; do
+  if [[ ! -s "$required_font_asset" ]]; then
+    echo "release check failed: missing bundled Chinese font asset: $required_font_asset" >&2
+    exit 1
+  fi
+done
+
+if ! rg -q "family: PortAISansSC" pubspec.yaml ||
+   ! rg -q "fontFamily: 'PortAISansSC'" lib/app.dart; then
+  echo "release check failed: bundled Chinese font is not wired into the app theme" >&2
+  exit 1
+fi
 "$python_bin" - <<'PY'
 from pathlib import Path
 import sys
@@ -60,6 +97,11 @@ fi
 
 if rg -n "未来 15 min 风险区间|StrategyCandidatesDataSource\.live|SystemPushNotificationService" lib; then
   echo "release check failed: misleading future/live/no-op module marker found" >&2
+  exit 1
+fi
+
+if ! rg -q "等待接入港口" lib/features/home lib/features/situation; then
+  echo "release check failed: first-clone port-integration boundary is not visible" >&2
   exit 1
 fi
 

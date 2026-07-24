@@ -1616,7 +1616,7 @@ class _OverviewViewModel {
 
     if (snapshot.feedMode == AlertsFeedMode.offline) {
       return const _ResolvedStatus(
-        label: '数据离线',
+        label: '等待接入港口',
         icon: Icons.cloud_off_outlined,
         kind: _StatusKind.neutral,
       );
@@ -1809,7 +1809,7 @@ class _OverviewViewModel {
     required AuditTimeline auditTimeline,
   }) {
     final alertsSource = snapshot.feedMode == AlertsFeedMode.offline
-        ? '告警：离线（无本地生成）'
+        ? '告警：等待接入港口（无本地生成）'
         : '告警：WebSocket 事件流';
     final strategySource =
         strategyState.candidatesDataSource == StrategyCandidatesDataSource.cache

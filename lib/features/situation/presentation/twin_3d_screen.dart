@@ -1161,7 +1161,7 @@ class _PlainLanguageSummary extends StatelessWidget {
                 child: Text(
                   snapshot.dataSource == SituationDataSource.live
                       ? '已验证现场数据网关'
-                      : '公开 AIS 历史回放 · 未连接 TOS / ECS / VTS',
+                      : '公开 AIS 历史回放 · 等待接入港口 TOS / ECS / VTS',
                   style: const TextStyle(
                     color: Color(0xFF7894BD),
                     fontSize: 9,

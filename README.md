@@ -140,15 +140,20 @@ docker compose up --build
 
 ### 验证门禁
 
+指标、测试与双端共享证据的对应关系见
+[`docs/EVIDENCE_INDEX.md`](docs/EVIDENCE_INDEX.md)。
+
 ```bash
 # Flutter：格式、静态分析与测试
 bash scripts/check.sh
 
 # Python：编译与 API / 训练合同测试
+python3.12 -m venv backend/.venv
+backend/.venv/bin/python -m pip install -r backend/requirements.txt
 bash scripts/check_backend.sh
 
 # 五基线 128 步接线验证；smoke_only=true
-python scripts/smoke_all_baselines.py --timesteps 128
+backend/.venv/bin/python scripts/smoke_all_baselines.py --timesteps 128
 
 # 上述门禁 + 数据边界与禁用伪造指标检查
 bash scripts/release_check.sh

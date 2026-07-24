@@ -115,6 +115,7 @@ class DtMobileApp extends StatelessWidget {
       colorScheme: scheme,
       brightness: Brightness.dark,
       useMaterial3: true,
+      fontFamily: 'PortAISansSC',
     );
 
     const minimumTouchTarget = Size(64, 48);

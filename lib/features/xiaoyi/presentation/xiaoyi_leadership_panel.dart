@@ -953,13 +953,11 @@ class _XiaoyiCoreLinkageConsoleState extends State<_XiaoyiCoreLinkageConsole>
                           ),
                         ],
                       ),
-                      child: const Center(
-                        child: Icon(
-                          Icons.hub_rounded,
-                          color: Colors.white,
-                          size: 46,
-                          semanticLabel: '小懿协同助手',
-                        ),
+                      clipBehavior: Clip.antiAlias,
+                      child: Image.asset(
+                        'assets/images/xiaoyi_maritime_officer.png',
+                        fit: BoxFit.cover,
+                        semanticLabel: '小懿Q版海事训练顾问',
                       ),
                     ),
                     Positioned(
@@ -1981,11 +1979,10 @@ class _XiaoyiSpriteIcon extends StatelessWidget {
             : null,
       ),
       clipBehavior: Clip.antiAlias,
-      child: Icon(
-        Icons.hub_rounded,
-        color: scheme.primary,
-        size: size * 0.56,
-        semanticLabel: '小懿协同助手图标',
+      child: Image.asset(
+        'assets/images/xiaoyi_maritime_officer.png',
+        fit: BoxFit.cover,
+        semanticLabel: '小懿Q版海事训练顾问',
       ),
     );
   }

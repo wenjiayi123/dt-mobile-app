@@ -1,7 +1,7 @@
 # 文档索引
 
 - [DATASET_CONTRACT.md](DATASET_CONTRACT.md)：替换港口训练集所需的 schema、manifest 与校验规则。
-- [RL_METHODOLOGY.md](RL_METHODOLOGY.md)：五算法、训练/验证/测试隔离、环境假设与指标口径。
+- [RL_METHODOLOGY.md](RL_METHODOLOGY.md)：共享七算法、独立AIS五方法、训练/测试隔离与指标口径。
 - [BACKEND_CONTRACT.md](BACKEND_CONTRACT.md)：Flutter 与 FastAPI 的接口契约。
 - [DATA_SOURCES.md](DATA_SOURCES.md)：公开数据来源、哈希、许可和使用限制。
 - [OPEN_SOURCE_AUDIT.md](OPEN_SOURCE_AUDIT.md)：模块真实性与生产就绪状态矩阵。

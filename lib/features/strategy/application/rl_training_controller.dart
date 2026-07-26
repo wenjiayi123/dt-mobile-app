@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/dio_provider.dart';
+import '../domain/shared_rl_contract.dart';
 
 enum RlDesktopTrainingPhase {
   idle,
@@ -23,23 +24,23 @@ enum RlDesktopTrainingPhase {
 class RlTrainingConfig {
   const RlTrainingConfig({
     this.algorithm = 'ppo',
-    this.objective = 'traffic_flow_safety',
-    this.scenario = 'public_ais_replay',
-    this.assetGroup = 'port_traffic',
+    this.objective = 'multi_objective',
+    this.scenario = 'public_benchmark_replay',
+    this.assetGroup = 'integrated_port_ops',
     this.totalSteps = 20000,
-    this.batchSize = 128,
+    this.batchSize = 256,
     this.learningRate = 0.0003,
-    this.gamma = 0.99,
+    this.gamma = 0.995,
     this.tau = 0.005,
     this.entropyCoef = 0.02,
     this.replayBuffer = 50000,
     this.seed = 42,
     this.guardrail = 'strict',
-    this.demandCapKw = 520,
-    this.costWeight = 0.20,
-    this.carbonWeight = 0.16,
+    this.demandCapKw = 3500,
+    this.costWeight = 0.22,
+    this.carbonWeight = 0.18,
     this.peakWeight = 0.18,
-    this.safetyWeight = 0.30,
+    this.safetyWeight = 0.25,
   });
 
   final String algorithm;
@@ -65,6 +66,8 @@ class RlTrainingConfig {
     'sac' => 'SAC 连续控制',
     'td3' => 'TD3 双延迟策略',
     'dqn' => 'DQN 离散调度',
+    'a2c' => 'A2C 优势演员评论家',
+    'tqc' => 'TQC 截断分位数评论家',
     'mpc' => 'MPC 模型预测控制基线',
     _ => 'PPO 策略优化',
   };
@@ -127,8 +130,9 @@ class RlTrainingConfig {
     'objective': objective,
     'scenario': scenario,
     'asset_group': assetGroup,
-    'max_episode_steps': 96,
-    'evaluation_episodes': 1,
+    'max_episode_steps': 120,
+    'episode_hours': 12,
+    'evaluation_episodes': 10,
     'rollout_horizon': 256,
     'total_steps': totalSteps,
     'batch_size': batchSize,
@@ -167,12 +171,18 @@ class RlAlgorithmDescriptor {
     required this.label,
     required this.family,
     required this.library,
+    this.trainable = true,
+    this.status = 'AVAILABLE',
+    this.multiSeedReady = false,
   });
 
   final String id;
   final String label;
   final String family;
   final String library;
+  final bool trainable;
+  final String status;
+  final bool multiSeedReady;
 }
 
 @immutable
@@ -198,7 +208,24 @@ class RlTrainingState {
     this.totalStepsReported = 0,
     this.datasetSplit = '—',
     this.datasetId = '—',
+    this.datasetTitle = '尚未读取数据登记',
+    this.datasetBoundary = '尚未读取数据使用边界',
+    this.sourcePublishers = '—',
     this.datasetSha256 = '—',
+    this.datasetRows = 0,
+    this.independentSourceObservations = 0,
+    this.trainRows = 0,
+    this.testRows = 0,
+    this.environmentVersion = '—',
+    this.portProfileId = '—',
+    this.observationDimensions = 0,
+    this.actionDimensions = 0,
+    this.availableFactorCount = 0,
+    this.totalFactorCount = sharedRealityFactorCount,
+    this.shortGapInterpolationCount = 0,
+    this.formalRlRunCount = 0,
+    this.formalControlBaselineCount = 0,
+    this.formalAlgorithmReadyCount = 0,
     this.evidenceLevel = '尚未读取',
     this.liveDataVerified = false,
     this.renderReady = false,
@@ -232,7 +259,24 @@ class RlTrainingState {
   final int totalStepsReported;
   final String datasetSplit;
   final String datasetId;
+  final String datasetTitle;
+  final String datasetBoundary;
+  final String sourcePublishers;
   final String datasetSha256;
+  final int datasetRows;
+  final int independentSourceObservations;
+  final int trainRows;
+  final int testRows;
+  final String environmentVersion;
+  final String portProfileId;
+  final int observationDimensions;
+  final int actionDimensions;
+  final int availableFactorCount;
+  final int totalFactorCount;
+  final int shortGapInterpolationCount;
+  final int formalRlRunCount;
+  final int formalControlBaselineCount;
+  final int formalAlgorithmReadyCount;
   final String evidenceLevel;
   final bool liveDataVerified;
   final bool renderReady;
@@ -257,6 +301,13 @@ class RlTrainingState {
   };
 
   bool get hasRequest => requestId != null;
+
+  bool get sharedContractVerified =>
+      hasExactSharedRlContract(algorithms.map((item) => item.id)) &&
+      datasetId == preferredSharedDatasetId &&
+      environmentVersion == preferredSharedEnvironmentVersion &&
+      observationDimensions == sharedObservationDimensions &&
+      actionDimensions == sharedActionDimensions;
 
   String get phaseLabel => switch (phase) {
     RlDesktopTrainingPhase.idle => desktopOnline ? '电脑端已连接' : '待连接电脑端',
@@ -292,7 +343,24 @@ class RlTrainingState {
     int? totalStepsReported,
     String? datasetSplit,
     String? datasetId,
+    String? datasetTitle,
+    String? datasetBoundary,
+    String? sourcePublishers,
     String? datasetSha256,
+    int? datasetRows,
+    int? independentSourceObservations,
+    int? trainRows,
+    int? testRows,
+    String? environmentVersion,
+    String? portProfileId,
+    int? observationDimensions,
+    int? actionDimensions,
+    int? availableFactorCount,
+    int? totalFactorCount,
+    int? shortGapInterpolationCount,
+    int? formalRlRunCount,
+    int? formalControlBaselineCount,
+    int? formalAlgorithmReadyCount,
     String? evidenceLevel,
     bool? liveDataVerified,
     bool? renderReady,
@@ -329,7 +397,29 @@ class RlTrainingState {
       totalStepsReported: totalStepsReported ?? this.totalStepsReported,
       datasetSplit: datasetSplit ?? this.datasetSplit,
       datasetId: datasetId ?? this.datasetId,
+      datasetTitle: datasetTitle ?? this.datasetTitle,
+      datasetBoundary: datasetBoundary ?? this.datasetBoundary,
+      sourcePublishers: sourcePublishers ?? this.sourcePublishers,
       datasetSha256: datasetSha256 ?? this.datasetSha256,
+      datasetRows: datasetRows ?? this.datasetRows,
+      independentSourceObservations:
+          independentSourceObservations ?? this.independentSourceObservations,
+      trainRows: trainRows ?? this.trainRows,
+      testRows: testRows ?? this.testRows,
+      environmentVersion: environmentVersion ?? this.environmentVersion,
+      portProfileId: portProfileId ?? this.portProfileId,
+      observationDimensions:
+          observationDimensions ?? this.observationDimensions,
+      actionDimensions: actionDimensions ?? this.actionDimensions,
+      availableFactorCount: availableFactorCount ?? this.availableFactorCount,
+      totalFactorCount: totalFactorCount ?? this.totalFactorCount,
+      shortGapInterpolationCount:
+          shortGapInterpolationCount ?? this.shortGapInterpolationCount,
+      formalRlRunCount: formalRlRunCount ?? this.formalRlRunCount,
+      formalControlBaselineCount:
+          formalControlBaselineCount ?? this.formalControlBaselineCount,
+      formalAlgorithmReadyCount:
+          formalAlgorithmReadyCount ?? this.formalAlgorithmReadyCount,
       evidenceLevel: evidenceLevel ?? this.evidenceLevel,
       liveDataVerified: liveDataVerified ?? this.liveDataVerified,
       renderReady: renderReady ?? this.renderReady,
@@ -392,20 +482,20 @@ class RlTrainingController extends Notifier<RlTrainingState> {
     }
     const recommended = RlTrainingConfig(
       algorithm: 'ppo',
-      objective: 'traffic_flow_safety',
+      objective: 'multi_objective',
       totalSteps: 20000,
-      batchSize: 128,
+      batchSize: 256,
       learningRate: 0.0003,
-      gamma: 0.99,
+      gamma: 0.995,
       seed: 42,
       guardrail: 'strict',
-      safetyWeight: 0.30,
+      safetyWeight: 0.25,
     );
     state = state.copyWith(
       config: recommended,
       configSource: 'xiaoyi_recommended',
       stage: '已按当前公开数据契约生成可复现的 PPO 起始参数',
-      logs: _prependLog('参数建议 · PPO / 2万步 / 种子42 / 严格护栏'),
+      logs: _prependLog('参数建议 · PPO / 2万步 / 10窗口测试 / 种子42'),
       errorMessage: null,
       updatedAt: DateTime.now(),
     );
@@ -419,12 +509,48 @@ class RlTrainingController extends Notifier<RlTrainingState> {
       errorMessage: null,
     );
     try {
-      final baselineResponse = await _dio.get<Object>(
-        '/api/rl/train/baselines',
+      final evidenceOptions = Options(
+        connectTimeout: const Duration(seconds: 20),
+        receiveTimeout: const Duration(seconds: 20),
       );
-      final baselineData = _asMap(baselineResponse.data);
-      final datasetData = _asMap(baselineData['dataset']);
-      final rawAlgorithms = baselineData['items'] ?? baselineData['baselines'];
+      final capabilitiesResponse = await _dio.get<Object>(
+        '/api/rl/engine/capabilities',
+        options: evidenceOptions,
+      );
+      final benchmarkResponse = await _dio.get<Object>(
+        '/api/rl/benchmarks/summary',
+        queryParameters: const <String, Object>{
+          'dataset_id': preferredSharedDatasetId,
+        },
+        options: evidenceOptions,
+      );
+      final capabilitiesData = _asMap(capabilitiesResponse.data);
+      final benchmarkData = _asMap(benchmarkResponse.data);
+      final datasets = capabilitiesData['datasets'];
+      final datasetData = datasets is List
+          ? datasets
+                .map(_asMap)
+                .firstWhere(
+                  (item) => item['dataset_id'] == preferredSharedDatasetId,
+                  orElse: () => <String, dynamic>{},
+                )
+          : <String, dynamic>{};
+      if (datasetData.isEmpty) {
+        throw FormatException('共享后端未登记所选数据集 $preferredSharedDatasetId');
+      }
+      final quality = _asMap(datasetData['quality']);
+      final contracts = _asMap(capabilitiesData['contracts']);
+      final environment = _asMap(
+        contracts[datasetData['environment_version']?.toString()],
+      );
+      final benchmarkAlgorithms = benchmarkData['algorithms'] is List
+          ? (benchmarkData['algorithms'] as List).map(_asMap).toList()
+          : const <Map<String, dynamic>>[];
+      final benchmarkById = <String, Map<String, dynamic>>{
+        for (final item in benchmarkAlgorithms)
+          if (item['id'] != null) item['id'].toString(): item,
+      };
+      final rawAlgorithms = capabilitiesData['algorithms'];
       final algorithmItems = rawAlgorithms is List
           ? rawAlgorithms
                 .map(_asMap)
@@ -441,10 +567,67 @@ class RlTrainingController extends Notifier<RlTrainingState> {
                         item['library']?.toString() ??
                         item['implementation']?.toString() ??
                         'unknown',
+                    trainable: item['trainable'] != false,
+                    status:
+                        item['status']?.toString() ??
+                        (benchmarkById.containsKey(item['id']?.toString())
+                            ? 'EVALUATED'
+                            : 'AVAILABLE'),
+                    multiSeedReady:
+                        benchmarkById[item['id']
+                            ?.toString()]?['multi_seed_ready'] ==
+                        true,
                   ),
                 )
                 .toList(growable: false)
           : const <RlAlgorithmDescriptor>[];
+      if (!hasExactSharedRlContract(algorithmItems.map((item) => item.id))) {
+        throw const FormatException('共享后端未返回 6 RL + MPC 精确算法契约');
+      }
+      final environmentVersion =
+          datasetData['environment_version']?.toString() ?? '—';
+      final observationDimensions = _toInt(
+        environment['observation_dimensions'],
+      );
+      final actionDimensions = _toInt(
+        environment['continuous_action_dimensions'],
+      );
+      if (environmentVersion != preferredSharedEnvironmentVersion ||
+          observationDimensions != sharedObservationDimensions ||
+          actionDimensions != sharedActionDimensions) {
+        throw const FormatException('共享后端未返回 port_ops_v2 37维观测/5维动作契约');
+      }
+      final formalRlRunCount = benchmarkAlgorithms
+          .where((item) => item['id'] != 'mpc')
+          .fold<int>(
+            0,
+            (sum, item) => sum + _toInt(item['claim_eligible_runs']),
+          );
+      final formalControlBaselineCount = benchmarkAlgorithms
+          .where((item) => item['id'] == 'mpc')
+          .fold<int>(
+            0,
+            (sum, item) => sum + _toInt(item['claim_eligible_runs']),
+          );
+      final formalAlgorithmReadyCount = benchmarkAlgorithms
+          .where((item) => item['multi_seed_ready'] == true)
+          .length;
+      final interpolationCounts = _asMap(
+        datasetData['short_gap_interpolation_counts'],
+      );
+      final rawSources = datasetData['sources'];
+      final sourcePublishers = rawSources is List
+          ? rawSources
+                .map(_asMap)
+                .map((item) => item['publisher']?.toString() ?? '')
+                .where((item) => item.isNotEmpty)
+                .toSet()
+                .join(' + ')
+          : '—';
+      final shortGapInterpolationCount = interpolationCounts.values.fold<int>(
+        0,
+        (sum, value) => sum + _toInt(value),
+      );
       final desktopStatus = await _readDesktopPanelStatus();
       state = state.copyWith(
         phase: previousPhase == RlDesktopTrainingPhase.failed
@@ -456,10 +639,33 @@ class RlTrainingController extends Notifier<RlTrainingState> {
         desktopLaunchMessage: desktopStatus.$3,
         algorithms: algorithmItems,
         datasetId: datasetData['dataset_id']?.toString() ?? '—',
-        datasetSha256: datasetData['dataset_sha256']?.toString() ?? '—',
-        evidenceLevel: datasetData['evidence_level']?.toString() ?? '未声明证据级别',
+        datasetTitle: datasetData['title']?.toString() ?? '未命名数据登记',
+        datasetBoundary: datasetData['warning']?.toString() ?? '未声明数据使用边界',
+        sourcePublishers: sourcePublishers,
+        datasetSha256: datasetData['sha256']?.toString() ?? '—',
+        datasetRows: _toInt(datasetData['rows']),
+        independentSourceObservations: _toInt(
+          datasetData['independent_source_observations'],
+        ),
+        trainRows: _toInt(datasetData['train_rows']),
+        testRows: _toInt(datasetData['test_rows']),
+        environmentVersion: environmentVersion,
+        portProfileId: datasetData['port_profile_id']?.toString() ?? '—',
+        observationDimensions: observationDimensions,
+        actionDimensions: actionDimensions,
+        availableFactorCount: _toInt(quality['available_factor_count']),
+        totalFactorCount: _toInt(quality['factor_count']),
+        shortGapInterpolationCount: shortGapInterpolationCount,
+        formalRlRunCount: formalRlRunCount,
+        formalControlBaselineCount: formalControlBaselineCount,
+        formalAlgorithmReadyCount: formalAlgorithmReadyCount,
+        datasetSplit:
+            '${_toInt(datasetData['train_rows'])}/${_toInt(datasetData['test_rows'])} 时序划分',
+        evidenceLevel: datasetData['evidence_tier']?.toString() ?? '未声明证据级别',
         liveDataVerified: datasetData['live_data_verified'] == true,
-        stage: state.hasRequest ? state.stage : '训练服务与数据指纹已核验，等待提交',
+        stage: state.hasRequest
+            ? state.stage
+            : '7算法、port_ops_v2 与公开数据指纹已核验，等待提交',
         updatedAt: DateTime.now(),
       );
     } on DioException catch (error) {
@@ -468,6 +674,14 @@ class RlTrainingController extends Notifier<RlTrainingState> {
         desktopOnline: false,
         stage: '无法连接电脑端训练服务',
         errorMessage: _friendlyDioError(error),
+        updatedAt: DateTime.now(),
+      );
+    } on FormatException catch (error) {
+      state = state.copyWith(
+        phase: state.hasRequest ? previousPhase : RlDesktopTrainingPhase.failed,
+        desktopOnline: false,
+        stage: '共享训练契约校验失败',
+        errorMessage: error.message,
         updatedAt: DateTime.now(),
       );
     }
@@ -832,7 +1046,24 @@ class RlTrainingController extends Notifier<RlTrainingState> {
       desktopPanelUrl: state.desktopPanelUrl,
       desktopLaunchMessage: state.desktopLaunchMessage,
       datasetId: state.datasetId,
+      datasetTitle: state.datasetTitle,
+      datasetBoundary: state.datasetBoundary,
+      sourcePublishers: state.sourcePublishers,
       datasetSha256: state.datasetSha256,
+      datasetRows: state.datasetRows,
+      independentSourceObservations: state.independentSourceObservations,
+      trainRows: state.trainRows,
+      testRows: state.testRows,
+      environmentVersion: state.environmentVersion,
+      portProfileId: state.portProfileId,
+      observationDimensions: state.observationDimensions,
+      actionDimensions: state.actionDimensions,
+      availableFactorCount: state.availableFactorCount,
+      totalFactorCount: state.totalFactorCount,
+      shortGapInterpolationCount: state.shortGapInterpolationCount,
+      formalRlRunCount: state.formalRlRunCount,
+      formalControlBaselineCount: state.formalControlBaselineCount,
+      formalAlgorithmReadyCount: state.formalAlgorithmReadyCount,
       evidenceLevel: state.evidenceLevel,
       liveDataVerified: state.liveDataVerified,
       algorithms: state.algorithms,

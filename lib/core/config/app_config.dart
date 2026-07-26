@@ -1,12 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-/// App 级统一配置。
-///
-/// Day 25：环境分层 / 联调准备
-/// 目标：
-/// 1) 给 Dio / 首页 / 设置页 / Debug 面板提供同一个配置来源
-/// 2) 统一 API / WS / 环境标签 / 传输语义
-/// 3) 继续保持实现简单，方便用 dart-define 覆盖
+/// App 运行环境、共享 API 与传输配置。
 class AppConfig {
   const AppConfig._();
 
@@ -133,19 +127,11 @@ class AppConfig {
     return '$environmentLabel · $deploymentHint · $sourceHint · $transportLabel';
   }
 
-  /// 统一默认请求头。
-  ///
-  /// 注意：
-  /// - token 先不在这里拼；
-  /// - token 属于运行时状态，应该由 auth / interceptor 注入。
+  /// 共享 FastAPI 后端允许的跨端默认请求头。
   static Map<String, String> defaultHeaders() {
     return <String, String>{
       'Accept': 'application/json',
       'Content-Type': 'application/json',
-      'X-Client-Platform': kIsWeb ? 'web' : defaultTargetPlatform.name,
-      'X-Client-App': 'dt_mobile_app',
-      'X-Client-Mode': 'mobile-decision-terminal',
-      'X-App-Env': environmentLabel,
     };
   }
 

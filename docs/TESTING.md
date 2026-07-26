@@ -16,9 +16,9 @@ python3 -m venv .venv
 bash scripts/check_backend.sh
 ```
 
-Python 测试覆盖：schema/hash/时间划分、train-only 标准化、训练期禁止渲染、test-only 轨迹、五算法合同、重规划产物门禁、客户端审阅参数边界、API key、异人审批、路径穿越防护、HTML 转义、fail-closed 和审计哈希链。
+独立 AIS 实验室 Python 测试覆盖：schema/hash/时间划分、train-only 标准化、训练期禁止渲染、test-only 轨迹、五方法合同、重规划产物门禁、客户端审阅参数边界、API key、异人审批、路径穿越防护、HTML 转义、fail-closed 和审计哈希链。
 
-## 五算法冒烟
+## 独立 AIS 实验室五方法冒烟
 
 ```bash
 .venv/bin/python scripts/smoke_all_baselines.py --timesteps 128
@@ -32,4 +32,4 @@ Python 测试覆盖：schema/hash/时间划分、train-only 标准化、训练�
 PORTAI_PYTHON=.venv/bin/python bash scripts/release_check.sh
 ```
 
-检查数据哈希、Python 编译/测试、Flutter 质量门槛、五基线 128-step 接线、训练渲染隔离、来源不明资产和高风险 fake 标记。
+检查数据哈希、Python 编译/测试、Flutter 质量门槛、独立 AIS 五方法 128-step 接线、训练渲染隔离、来源不明资产和高风险 fake 标记。

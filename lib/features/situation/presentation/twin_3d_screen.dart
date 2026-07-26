@@ -10,6 +10,7 @@ import 'package:dt_mobile_app/features/audit/application/audit_controller.dart';
 import 'package:dt_mobile_app/features/demo/application/demo_flow_controller.dart';
 import 'package:dt_mobile_app/features/home/application/home_tab_notifier.dart';
 import 'package:dt_mobile_app/features/situation/application/situation_controller.dart';
+import 'package:dt_mobile_app/features/strategy/domain/shared_rl_contract.dart';
 import 'package:dt_mobile_app/shared/ui/intelligent_action_button.dart';
 
 enum _TwinViewMode { live, forecast, simulation }
@@ -574,7 +575,7 @@ class _RlSimulationProgressSheet extends ConsumerStatefulWidget {
 class _RlSimulationProgressSheetState
     extends ConsumerState<_RlSimulationProgressSheet> {
   static const _stages = <(String, String, String)>[
-    ('读取数据与算法契约', '校验公开数据证据和五算法清单', 'GET /api/rl/train/baselines'),
+    ('读取数据与算法契约', '校验公开数据证据和七算法矩阵', 'GET /api/rl/train/baselines'),
     ('读取留出测试产物', '训练结束后生成的测试轨迹；训练阶段不渲染', 'POST /api/rl/future/run'),
     ('校验回放边界', '要求 dataset_split=test 且轨迹非空', 'artifact.validate'),
     ('写入审计', '只记录结果，不下发生产系统', 'audit.record'),
@@ -636,22 +637,32 @@ class _RlSimulationProgressSheetState
     try {
       final response = await ref
           .read(dioProvider)
-          .get<Object>('/api/rl/train/baselines');
+          .get<Object>(
+            '/api/rl/train/baselines',
+            queryParameters: const <String, Object>{
+              'dataset_id': preferredSharedDatasetId,
+            },
+          );
       final data = _asMap(response.data);
-      final baselines = data['items'];
-      final count = baselines is List ? baselines.length : 0;
-      if (count != 5 || data['contract'] != 'four_rl_plus_one_control') {
-        throw const FormatException('后端未返回 4 RL + 1 控制基线契约');
+      final baselines = data['items'] ?? data['baselines'];
+      final ids = baselines is List
+          ? baselines
+                .map(_asMap)
+                .map((item) => item['id']?.toString() ?? '')
+                .where((item) => item.isNotEmpty)
+          : const <String>[];
+      if (!hasExactSharedRlContract(ids)) {
+        throw const FormatException('后端未返回 6 RL + MPC 精确算法契约');
       }
       if (!mounted) return false;
       setState(() {
         _desktopOnline = true;
-        _connectorDetail = '电脑端在线 · 已读取 $count 个基线算法';
-        _logs.insert(0, '${_time()} · RL服务握手成功 · baseline=$count');
+        _connectorDetail = '电脑端在线 · 已核验 ${ids.length} 个算法';
+        _logs.insert(0, '${_time()} · RL服务握手成功 · algorithms=${ids.length}');
       });
       return true;
     } catch (error) {
-      _fail('RL 服务或五算法契约不可用：$error');
+      _fail('RL 服务或七算法契约不可用：$error');
       return false;
     }
   }

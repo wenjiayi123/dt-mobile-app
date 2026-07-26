@@ -14,7 +14,7 @@
 - `GET /api/situation/current`：由当前数据集最后一个测试时间点派生的摘要。公开回放返回 `riskEvidence=derived_point_from_historical_ais`、`riskHorizonMinutes=0`，低/高值相等；客户端不得把它写成未来预测或置信区间。
 - `GET /api/alerts`、`WS /ws/alerts`：由历史 AIS 测试段派生的标记告警；断线时客户端不得生成业务告警。
 
-## 五算法训练
+## 独立 AIS 实验室五方法训练
 
 - `GET /api/rl/train/baselines`
   - 必须返回 `contract=four_rl_plus_one_control`、`count=5`。

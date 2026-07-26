@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:dt_mobile_app/features/strategy/application/rl_training_controller.dart';
 import 'package:dt_mobile_app/features/strategy/application/strategy_controller.dart';
+import 'package:dt_mobile_app/features/strategy/domain/shared_rl_contract.dart';
 
 enum _EvidenceView { training, evaluation, baselines, data }
 
@@ -184,7 +185,7 @@ class _RlDecisionConsoleState extends ConsumerState<RlDecisionConsole> {
           if (!training.hasRequest) ...[
             const SizedBox(height: 7),
             const Text(
-              '先在上方选择五个基线之一并提交训练；没有真实任务时不生成曲线或测试结论。',
+              '先在上方选择七算法矩阵之一并提交训练；没有真实任务时不生成曲线或测试结论。',
               style: TextStyle(color: Color(0xFFFFD08A), fontSize: 9),
             ),
           ],
@@ -205,7 +206,7 @@ class _EvidenceSwitch extends StatelessWidget {
     const items = [
       (_EvidenceView.training, '训练曲线', Icons.show_chart_rounded),
       (_EvidenceView.evaluation, '测试回放', Icons.play_circle_outline),
-      (_EvidenceView.baselines, '五基线', Icons.compare_arrows_rounded),
+      (_EvidenceView.baselines, '算法矩阵', Icons.compare_arrows_rounded),
       (_EvidenceView.data, '数据证据', Icons.fingerprint_rounded),
     ];
     return Row(
@@ -447,10 +448,10 @@ class _BaselineEvidence extends StatelessWidget {
             child: Row(
               children: [
                 Icon(
-                  algorithm.family == 'control_theory'
+                  algorithm.family.toLowerCase() == 'control'
                       ? Icons.tune_rounded
                       : Icons.model_training_outlined,
-                  color: algorithm.family == 'control_theory'
+                  color: algorithm.family.toLowerCase() == 'control'
                       ? const Color(0xFFFFD08A)
                       : const Color(0xFF4DE4FF),
                 ),
@@ -478,7 +479,11 @@ class _BaselineEvidence extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  trainedById.contains(algorithm.id) ? '已有测试产物' : '尚未训练',
+                  algorithm.status == 'EVALUATED'
+                      ? (algorithm.multiSeedReady ? '多种子证据就绪' : '已有测试产物')
+                      : (trainedById.contains(algorithm.id)
+                            ? '已有测试产物'
+                            : '尚未训练'),
                   style: TextStyle(
                     color: trainedById.contains(algorithm.id)
                         ? const Color(0xFF76F7C5)
@@ -490,11 +495,13 @@ class _BaselineEvidence extends StatelessWidget {
               ],
             ),
           ),
-        if (training.algorithms.length != 5)
+        if (!hasExactSharedRlContract(
+          training.algorithms.map((item) => item.id),
+        ))
           const _BoundaryBanner(
             icon: Icons.error_outline,
-            title: '服务端五基线契约尚未核验',
-            detail: '正常状态必须恰好返回 PPO、SAC、TD3、DQN、MPC。',
+            title: '服务端七算法契约尚未核验',
+            detail: '正常状态必须恰好返回 SAC、PPO、TD3、DQN、A2C、TQC、MPC。',
             color: Color(0xFFFF7A9D),
           ),
       ],
@@ -518,22 +525,40 @@ class _DataEvidence extends StatelessWidget {
           icon: state.liveDataVerified
               ? Icons.sensors_rounded
               : Icons.history_rounded,
-          title: state.liveDataVerified ? '已验证港口实时数据' : '公开历史 AIS 回放',
+          title: state.liveDataVerified
+              ? '已验证港口实时数据'
+              : '${state.datasetTitle} · 非生产实况',
           detail: state.liveDataVerified
               ? '后端已通过 live_data_verified 门。'
-              : '当前数据可用于复现与接口联调，不代表港口实时态势或生产效果。',
+              : state.datasetBoundary,
           color: state.liveDataVerified
               ? const Color(0xFF76F7C5)
               : const Color(0xFFFFD08A),
         ),
         const SizedBox(height: 10),
         _EvidenceRow(label: '数据集 ID', value: state.datasetId),
+        _EvidenceRow(label: '来源登记', value: state.sourcePublishers),
         _EvidenceRow(label: '证据级别', value: state.evidenceLevel),
+        _EvidenceRow(
+          label: '规模 / 原始观测',
+          value:
+              '${state.datasetRows}时步 / ${state.independentSourceObservations}条',
+        ),
+        _EvidenceRow(
+          label: '环境 / 空间',
+          value:
+              '${state.environmentVersion} · ${state.observationDimensions}D / ${state.actionDimensions}D',
+        ),
+        _EvidenceRow(
+          label: '现实因素',
+          value:
+              '${state.availableFactorCount}/${state.totalFactorCount}类公开覆盖 · 可用性掩码',
+        ),
         _EvidenceRow(label: 'SHA-256', value: hash, monospace: true),
         _EvidenceRow(label: '当前分段', value: state.datasetSplit),
-        const _EvidenceRow(
+        _EvidenceRow(
           label: '替换边界',
-          value: 'port_traffic_timeseries_v1 CSV + manifest 字段映射',
+          value: '${state.portProfileId} → 真实港口 CSV/JSON + manifest 字段映射',
         ),
       ],
     );

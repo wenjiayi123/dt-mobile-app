@@ -5,6 +5,7 @@ import '../../audit/application/audit_controller.dart';
 import '../../demo/application/demo_flow_controller.dart';
 import '../../home/application/home_tab_notifier.dart';
 import '../application/rl_training_controller.dart';
+import '../domain/shared_rl_contract.dart';
 
 class RlTrainingLinkageCard extends ConsumerStatefulWidget {
   const RlTrainingLinkageCard({super.key});
@@ -175,6 +176,7 @@ class _RlTrainingLinkageCardState extends ConsumerState<RlTrainingLinkageCard> {
                           final config = await _showConfigSheet(
                             context,
                             state.config,
+                            state.algorithms,
                           );
                           if (config != null) controller.updateConfig(config);
                         },
@@ -294,7 +296,11 @@ class _RlTrainingLinkageCardState extends ConsumerState<RlTrainingLinkageCard> {
       );
       if (!mounted || action != _HandoffSheetAction.manualConfig) return;
       final current = ref.read(rlTrainingProvider);
-      final config = await _showConfigSheet(context, current.config);
+      final config = await _showConfigSheet(
+        context,
+        current.config,
+        current.algorithms,
+      );
       if (!mounted) return;
       if (config != null) {
         ref.read(rlTrainingProvider.notifier).updateConfig(config);
@@ -318,7 +324,7 @@ class _RlTrainingLinkageCardState extends ConsumerState<RlTrainingLinkageCard> {
           meta: <String, Object?>{
             'source': 'mobile_rl_training_request',
             'stateSummary': '数据指纹与训练参数已提交电脑端',
-            'policySetSummary': '真实五基线训练申请 $requestId',
+            'policySetSummary': '真实七算法训练申请 $requestId',
             'humanChoiceSummary': '等待电脑端人工批准，移动端不可绕过',
             'targetPolicyTitle': '港口交通流策略训练',
           },
@@ -864,7 +870,9 @@ class _DatasetEvidenceStrip extends StatelessWidget {
         runSpacing: 5,
         children: [
           Text(
-            state.liveDataVerified ? '已验证实时数据' : '公开历史回放 · 非生产实况',
+            state.liveDataVerified
+                ? '已验证实时数据'
+                : '${state.datasetTitle} · 非生产实况',
             style: TextStyle(
               color: color,
               fontSize: 10,
@@ -884,7 +892,22 @@ class _DatasetEvidenceStrip extends StatelessWidget {
             ),
           ),
           Text(
-            '${state.algorithms.length}/5 基线已由服务声明',
+            state.sharedContractVerified
+                ? '${state.algorithms.length}/7 算法契约已核验'
+                : '${state.algorithms.length}/7 算法契约待核验',
+            style: TextStyle(
+              color: state.sharedContractVerified
+                  ? const Color(0xFF76F7C5)
+                  : const Color(0xFFFFD08A),
+              fontSize: 9,
+            ),
+          ),
+          Text(
+            '${state.environmentVersion} · ${state.observationDimensions}D观测 / ${state.actionDimensions}D动作',
+            style: const TextStyle(color: Color(0xFF7BA2D4), fontSize: 9),
+          ),
+          Text(
+            '${state.formalRlRunCount}组RL正式训练 + ${state.formalControlBaselineCount}组MPC证据',
             style: const TextStyle(color: Color(0xFF7BA2D4), fontSize: 9),
           ),
         ],
@@ -1148,8 +1171,24 @@ class _LinkStatusPill extends StatelessWidget {
 Future<RlTrainingConfig?> _showConfigSheet(
   BuildContext context,
   RlTrainingConfig initial,
+  List<RlAlgorithmDescriptor> algorithms,
 ) async {
   var config = initial;
+  final availableAlgorithms = algorithms.isEmpty
+      ? sharedRlAlgorithmIds
+            .map(
+              (id) =>
+                  MapEntry(id, sharedRlAlgorithmLabels[id] ?? id.toUpperCase()),
+            )
+            .toList(growable: false)
+      : algorithms
+            .map(
+              (item) => MapEntry(
+                item.id,
+                sharedRlAlgorithmLabels[item.id] ?? item.label,
+              ),
+            )
+            .toList(growable: false);
   return showModalBottomSheet<RlTrainingConfig>(
     context: context,
     isScrollControlled: true,
@@ -1181,14 +1220,11 @@ Future<RlTrainingConfig?> _showConfigSheet(
               DropdownButtonFormField<String>(
                 initialValue: config.algorithm,
                 decoration: const InputDecoration(
-                  labelText: '五基线算法（4 RL + 1 控制）',
+                  labelText: '七算法矩阵（6 RL + 1 控制）',
                 ),
-                items: const [
-                  DropdownMenuItem(value: 'ppo', child: Text('PPO · 强化学习')),
-                  DropdownMenuItem(value: 'sac', child: Text('SAC · 连续动作控制')),
-                  DropdownMenuItem(value: 'td3', child: Text('TD3 · 双延迟控制')),
-                  DropdownMenuItem(value: 'dqn', child: Text('DQN · 九种离散调度动作')),
-                  DropdownMenuItem(value: 'mpc', child: Text('MPC · 模型预测控制基线')),
+                items: [
+                  for (final item in availableAlgorithms)
+                    DropdownMenuItem(value: item.key, child: Text(item.value)),
                 ],
                 onChanged: (value) => setSheetState(() {
                   if (value == null) return;
@@ -1206,8 +1242,8 @@ Future<RlTrainingConfig?> _showConfigSheet(
                 decoration: const InputDecoration(labelText: '港口优化目标'),
                 items: const [
                   DropdownMenuItem(
-                    value: 'traffic_flow_safety',
-                    child: Text('交通流效率 + 拥堵 + 冲突安全余量'),
+                    value: 'multi_objective',
+                    child: Text('成本 + 碳排 + 峰值 + 安全 + 延误'),
                   ),
                 ],
                 onChanged: (value) => setSheetState(

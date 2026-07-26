@@ -316,11 +316,10 @@ class _DraggableXiaoyiLauncher extends StatelessWidget {
                 ),
                 Padding(
                   padding: const EdgeInsets.all(5),
-                  child: Icon(
-                    Icons.hub_rounded,
-                    color: scheme.primary,
-                    size: 44,
-                    semanticLabel: '小懿协同助手',
+                  child: Image.asset(
+                    'assets/images/xiaoyi_maritime_officer.png',
+                    fit: BoxFit.cover,
+                    semanticLabel: '小懿Q版全系统助手',
                   ),
                 ),
                 Positioned(

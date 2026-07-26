@@ -45,9 +45,29 @@ for required_font_asset in \
   fi
 done
 
+for required_product_asset in \
+  assets/images/xiaoyi_maritime_officer.png \
+  docs/assets/mobile-shared-evidence-v2.jpg \
+  docs/assets/mobile-rl-training-center-v2.jpg \
+  docs/assets/mobile-seven-algorithm-matrix-v2.jpg \
+  docs/assets/mobile-public-data-evidence-v2.jpg \
+  docs/assets/mobile-xiaoyi-action-linkage-v2.jpg; do
+  if [[ ! -s "$required_product_asset" ]]; then
+    echo "release check failed: missing product evidence asset: $required_product_asset" >&2
+    exit 1
+  fi
+done
+
 if ! rg -q "family: PortAISansSC" pubspec.yaml ||
    ! rg -q "fontFamily: 'PortAISansSC'" lib/app.dart; then
   echo "release check failed: bundled Chinese font is not wired into the app theme" >&2
+  exit 1
+fi
+if ! rg -q "assets/images/xiaoyi_maritime_officer.png" pubspec.yaml ||
+   ! rg -q "sharedRlAlgorithmIds" lib/features/strategy ||
+   ! rg -q "sharedObservationDimensions = 37" lib/features/strategy ||
+   ! rg -q "sharedActionDimensions = 5" lib/features/strategy; then
+  echo "release check failed: shared Web/mobile RL or Xiaoyi contract is not wired" >&2
   exit 1
 fi
 "$python_bin" - <<'PY'

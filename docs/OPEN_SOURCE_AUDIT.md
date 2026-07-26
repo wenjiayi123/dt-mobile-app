@@ -3,7 +3,7 @@
 | 模块 | 当前驱动 | 状态与边界 |
 | --- | --- | --- |
 | 双端后端身份 | `GET /api/mobile/status` | Web / Flutter 固定读取 `port-dt-multi`，不再混用独立实验后端 |
-| RL 算法选择 | 共享后端五算法注册表 | 真实；固定 SAC / PPO / TD3 / DQN + MPC |
+| RL 算法选择 | 共享后端七算法注册表 | 真实；固定 SAC / PPO / TD3 / DQN / A2C / TQC + MPC |
 | 训练进度 | SB3 callback / PID 校准 trial | 真实；无计时器或插值伪进度 |
 | 训练曲线 | worker 写出的 history | 真实；没有数据时不画曲线 |
 | 测试回放 | 独立 test split 轨迹 | 真实；训练完成前不可用 |

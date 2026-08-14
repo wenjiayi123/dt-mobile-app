@@ -4,16 +4,30 @@ import 'package:flutter/foundation.dart';
 class AppConfig {
   const AppConfig._();
 
-  static const String _defaultApiBaseUrl = 'http://10.0.2.2:8000';
+  static const String _androidEmulatorApiBaseUrl = 'http://10.0.2.2:8000';
+  static const String _webApiBaseUrl = 'http://127.0.0.1:8000';
+  static const String _configuredApiBaseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: '',
+  );
 
   /// 可通过：
   /// flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8000
   /// flutter run --dart-define=APP_ENV=public_replay --dart-define=API_BASE_URL=http://127.0.0.1:8000
   /// 来覆盖。
-  static const String apiBaseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: _defaultApiBaseUrl,
-  );
+  static String get apiBaseUrl =>
+      resolveApiBaseUrl(configured: _configuredApiBaseUrl, web: kIsWeb);
+
+  /// Web 端默认走当前电脑的共享 FastAPI，Android 模拟器仍走宿主机映射。
+  /// 显式传入 `API_BASE_URL` 时始终以部署配置为准。
+  static String resolveApiBaseUrl({
+    required String configured,
+    required bool web,
+  }) {
+    final normalized = configured.trim();
+    if (normalized.isNotEmpty) return normalized;
+    return web ? _webApiBaseUrl : _androidEmulatorApiBaseUrl;
+  }
 
   static const String appEnv = String.fromEnvironment(
     'APP_ENV',

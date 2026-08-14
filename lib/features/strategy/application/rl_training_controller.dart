@@ -64,13 +64,21 @@ class RlTrainingConfig {
 
   String get algorithmLabel => switch (algorithm) {
     'sac' => 'SAC 连续控制',
+    'ppo' => 'PPO 策略优化',
     'td3' => 'TD3 双延迟策略',
     'dqn' => 'DQN 离散调度',
     'a2c' => 'A2C 优势演员评论家',
     'tqc' => 'TQC 截断分位数评论家',
+    'qrdqn' => 'QR-DQN 分位数离散控制',
+    'trpo' => 'TRPO 信赖域策略优化',
+    'recurrent_ppo' => 'Recurrent PPO 时序策略',
+    'ars' => 'ARS 随机搜索策略',
     'mpc' => 'MPC 模型预测控制基线',
-    _ => 'PPO 策略优化',
+    'fcfs' => 'FCFS 中性规则基线',
+    _ => algorithm.toUpperCase(),
   };
+
+  bool get isTrainable => !sharedNonTrainableAlgorithmIds.contains(algorithm);
 
   String get objectiveLabel => switch (objective) {
     'traffic_flow_safety' => '交通流与安全余量',
@@ -303,9 +311,9 @@ class RlTrainingState {
   bool get hasRequest => requestId != null;
 
   bool get sharedContractVerified =>
-      hasExactSharedRlContract(algorithms.map((item) => item.id)) &&
+      hasCompatibleSharedRlContract(algorithms.map((item) => item.id)) &&
       datasetId == preferredSharedDatasetId &&
-      environmentVersion == preferredSharedEnvironmentVersion &&
+      supportedSharedEnvironmentVersions.contains(environmentVersion) &&
       observationDimensions == sharedObservationDimensions &&
       actionDimensions == sharedActionDimensions;
 
@@ -581,8 +589,10 @@ class RlTrainingController extends Notifier<RlTrainingState> {
                 )
                 .toList(growable: false)
           : const <RlAlgorithmDescriptor>[];
-      if (!hasExactSharedRlContract(algorithmItems.map((item) => item.id))) {
-        throw const FormatException('共享后端未返回 6 RL + MPC 精确算法契约');
+      if (!hasCompatibleSharedRlContract(
+        algorithmItems.map((item) => item.id),
+      )) {
+        throw const FormatException('共享后端算法合同缺少核心方法或包含未登记方法');
       }
       final environmentVersion =
           datasetData['environment_version']?.toString() ?? '—';
@@ -592,19 +602,26 @@ class RlTrainingController extends Notifier<RlTrainingState> {
       final actionDimensions = _toInt(
         environment['continuous_action_dimensions'],
       );
-      if (environmentVersion != preferredSharedEnvironmentVersion ||
+      if (!supportedSharedEnvironmentVersions.contains(environmentVersion) ||
           observationDimensions != sharedObservationDimensions ||
           actionDimensions != sharedActionDimensions) {
-        throw const FormatException('共享后端未返回 port_ops_v2 37维观测/5维动作契约');
+        throw const FormatException('共享后端未返回 port_ops_v2/v3 37维观测/5维动作契约');
       }
       final formalRlRunCount = benchmarkAlgorithms
-          .where((item) => item['id'] != 'mpc')
+          .where(
+            (item) => !sharedNonTrainableAlgorithmIds.contains(
+              item['id']?.toString(),
+            ),
+          )
           .fold<int>(
             0,
             (sum, item) => sum + _toInt(item['claim_eligible_runs']),
           );
       final formalControlBaselineCount = benchmarkAlgorithms
-          .where((item) => item['id'] == 'mpc')
+          .where(
+            (item) =>
+                sharedNonTrainableAlgorithmIds.contains(item['id']?.toString()),
+          )
           .fold<int>(
             0,
             (sum, item) => sum + _toInt(item['claim_eligible_runs']),
@@ -665,7 +682,7 @@ class RlTrainingController extends Notifier<RlTrainingState> {
         liveDataVerified: datasetData['live_data_verified'] == true,
         stage: state.hasRequest
             ? state.stage
-            : '7算法、port_ops_v2 与公开数据指纹已核验，等待提交',
+            : '${algorithmItems.length}方法、$environmentVersion 与公开数据指纹已核验，等待提交',
         updatedAt: DateTime.now(),
       );
     } on DioException catch (error) {

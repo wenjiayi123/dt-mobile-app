@@ -23,10 +23,14 @@
 移动端通过共享后端 `/api/rl/engine/capabilities` 与
 `/api/rl/benchmarks/summary?dataset_id=public_us_la_6min_v1` 核验：
 
-- 精确七算法集合：SAC、PPO、TD3、DQN、A2C、TQC、MPC；
+- 核心兼容集合：SAC、PPO、TD3、DQN、A2C、TQC、MPC；当前 V3.2 完整能力另含 QR-DQN、TRPO、Recurrent PPO、ARS、FCFS；
 - `port_ops_v2` 的37维观测、5维建议动作与12类因素可用性掩码；
 - 87,459个六分钟时步、262,347条独立公共原始观测、69,967/17,492时序划分；
 - 18组多种子正式RL训练证据与1组MPC控制基线证据。
+
+移动端小懿还会调用 `/api/rl/integration/health`、
+`/api/assistant/actions/execute` 与 `/api/mobile/audit/verify`，只有身份、路由、
+dry-run 回执和审计链同时通过时才显示“Web 共享链路已核验”。
 
 权威训练产物、数据 manifest、质量报告和来源登记位于配套
 `port-dt-multi` 仓库；移动仓库只消费并失效关闭校验，不复制或改写证据。

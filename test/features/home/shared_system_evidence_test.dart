@@ -5,6 +5,8 @@ void main() {
   test('parses the shared system and mobile workflow evidence separately', () {
     final evidence = SharedSystemEvidence.fromJson(<String, dynamic>{
       'backend_id': 'port-dt-multi',
+      'shared_backend_verified': true,
+      'frontends': <String>['web', 'flutter_mobile'],
       'business_benchmark': <String, dynamic>{
         'dataset_id': 'public_port_ops_v1',
         'test_rows': 8760,
@@ -32,5 +34,16 @@ void main() {
     expect(evidence.berthPointGain, closeTo(7.454, 0.001));
     expect(evidence.workflowOperations, 500);
     expect(evidence.auditChainValid, isTrue);
+  });
+
+  test('rejects a response that is not the shared Web/mobile backend', () {
+    expect(
+      () => SharedSystemEvidence.fromJson(<String, dynamic>{
+        'backend_id': 'unknown',
+        'shared_backend_verified': false,
+        'frontends': <String>['flutter_mobile'],
+      }),
+      throwsFormatException,
+    );
   });
 }

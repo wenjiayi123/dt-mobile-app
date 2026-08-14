@@ -575,8 +575,12 @@ class _RlSimulationProgressSheet extends ConsumerStatefulWidget {
 class _RlSimulationProgressSheetState
     extends ConsumerState<_RlSimulationProgressSheet> {
   static const _stages = <(String, String, String)>[
-    ('读取数据与算法契约', '校验公开数据证据和七算法矩阵', 'GET /api/rl/train/baselines'),
-    ('读取留出测试产物', '训练结束后生成的测试轨迹；训练阶段不渲染', 'POST /api/rl/future/run'),
+    ('读取数据与算法契约', '校验公开数据证据和共享算法矩阵', 'GET /api/rl/train/baselines'),
+    (
+      '运行留出集策略测试',
+      '读取已登记模型并由后端执行独立测试',
+      'GET /api/rl/strategies → POST /api/rl/simulate',
+    ),
     ('校验回放边界', '要求 dataset_split=test 且轨迹非空', 'artifact.validate'),
     ('写入审计', '只记录结果，不下发生产系统', 'audit.record'),
   ];
@@ -651,8 +655,8 @@ class _RlSimulationProgressSheetState
                 .map((item) => item['id']?.toString() ?? '')
                 .where((item) => item.isNotEmpty)
           : const <String>[];
-      if (!hasExactSharedRlContract(ids)) {
-        throw const FormatException('后端未返回 6 RL + MPC 精确算法契约');
+      if (!hasCompatibleSharedRlContract(ids)) {
+        throw const FormatException('后端共享算法合同不兼容');
       }
       if (!mounted) return false;
       setState(() {
@@ -662,28 +666,56 @@ class _RlSimulationProgressSheetState
       });
       return true;
     } catch (error) {
-      _fail('RL 服务或七算法契约不可用：$error');
+      _fail('RL 服务或共享算法合同不可用：$error');
       return false;
     }
   }
 
   Future<bool> _runRlScenario() async {
     try {
+      final strategiesResponse = await ref
+          .read(dioProvider)
+          .get<Object>(
+            '/api/rl/strategies',
+            queryParameters: const <String, Object>{'max_items': 12},
+          );
+      final strategiesData = _asMap(strategiesResponse.data);
+      final strategies = strategiesData['strategies'];
+      if (strategies is! List || strategies.isEmpty) {
+        throw const FormatException('共享后端没有已登记且完成测试的模型');
+      }
+      final selected = _asMap(strategies.first);
+      final strategyId = selected['id']?.toString() ?? '';
+      if (strategyId.isEmpty) {
+        throw const FormatException('模型登记缺少可审计的 strategy_id');
+      }
       final response = await ref
           .read(dioProvider)
           .post<Object>(
-            '/api/rl/future/run',
-            data: const <String, Object>{'source': 'dt_mobile_twin'},
+            '/api/rl/simulate',
+            data: <String, Object>{
+              'strategy_id': strategyId,
+              'episodes': 10,
+              'source': 'dt_mobile_twin',
+            },
           );
       final data = _asMap(response.data);
-      final frames = data['frames'];
-      if (data['dataset_split'] != 'test' || frames is! List) {
+      final evaluation = _asMap(data['evaluation']);
+      final render = _asMap(evaluation['render']);
+      final frames = render['frames'];
+      final split = evaluation['split']?.toString() ?? '';
+      if (data['mode'] != 'chronological_holdout_evaluation' ||
+          data['production_dispatched'] != false ||
+          !split.contains('test') ||
+          frames is! List) {
         throw const FormatException('接口未返回独立测试集轨迹');
       }
       if (!mounted) return false;
+      final meta = _asMap(selected['meta']);
       setState(() {
-        _runId = (data['job_id'] ?? '').toString();
-        _algorithm = (data['algorithm'] ?? '').toString();
+        _runId = strategyId;
+        _algorithm = (meta['algorithm'] ?? evaluation['algorithm'] ?? '')
+            .toString();
         _frameCount = frames.length;
         _logs.insert(0, '${_time()} · 返回 $_frameCount 帧测试轨迹');
       });

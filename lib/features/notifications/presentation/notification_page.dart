@@ -93,6 +93,7 @@ class _NotificationPageState extends ConsumerState<NotificationPage> {
             const SizedBox(height: 12),
             _FocusCard(
               focusedItem: focusedItem,
+              onContinue: (tab) => _openTabAndClose(context, ref, tab),
               onClearFocus: () {
                 setState(() {
                   _focusedNotificationId = null;
@@ -188,9 +189,14 @@ class _SummaryCard extends StatelessWidget {
 }
 
 class _FocusCard extends StatelessWidget {
-  const _FocusCard({required this.focusedItem, required this.onClearFocus});
+  const _FocusCard({
+    required this.focusedItem,
+    required this.onContinue,
+    required this.onClearFocus,
+  });
 
   final InAppNotificationItem? focusedItem;
+  final ValueChanged<HomeTab> onContinue;
   final VoidCallback? onClearFocus;
 
   @override
@@ -240,7 +246,7 @@ class _FocusCard extends StatelessWidget {
                 label: const Text('清除焦点'),
               ),
               OutlinedButton.icon(
-                onPressed: null,
+                onPressed: () => onContinue(routeAction.primaryTab),
                 icon: Icon(routeAction.primaryIcon),
                 label: Text('下一步：${routeAction.primaryLabel}'),
               ),

@@ -105,10 +105,10 @@ Critical boundary: `TRAIN render_mode=None → model and history hashes → trai
 
 ![移动端共享强化学习训练中心](docs/assets/mobile-rl-training-center-v2.jpg)
 
-移动端一次核验 `public_us_la_6min_v1`、数据 SHA-256、`port_ops_v2`、37维观测、5维动作、七算法注册表和正式证据数量；任一项不一致即失效关闭。<br>
-The client verifies the dataset, SHA-256, `port_ops_v2`, 37-D observations, 5-D actions, seven-method registry, and formal-evidence counts as one fail-closed contract.
+移动端一次核验 `public_us_la_6min_v1`、数据 SHA-256、`port_ops_v2/v3`、37维观测、5维动作、共享算法注册表和正式证据数量；任一核心项不一致即失效关闭。当前 V3.2 Web 后端返回 10 个 RL 方法以及 MPC、FCFS 两类控制/规则基线，移动端保留原 6 RL + MPC 核心兼容合同并校验扩展方法是否登记。<br>
+The client verifies the dataset, SHA-256, `port_ops_v2/v3`, 37-D observations, 5-D actions, the shared method registry, and formal-evidence counts as one fail-closed contract. The current V3.2 Web backend exposes ten RL methods plus MPC and FCFS while retaining the original six-RL-plus-MPC compatibility core.
 
-### 共享后端七算法 / Seven shared-backend methods
+### 共享后端算法合同 / Shared-backend method contract
 
 | 基线 / Baseline | 实现 / Implementation | 动作空间 / Action space | 在仓库中的角色 / Role |
 |---|---|---|---|
@@ -118,9 +118,11 @@ The client verifies the dataset, SHA-256, `port_ops_v2`, 37-D observations, 5-D 
 | DQN | Stable-Baselines3 | 离散 / discrete | 离散策略对照基线 / discrete policy comparator |
 | A2C | Stable-Baselines3 | 连续 / continuous | 低开销 on-policy 对照 / low-overhead on-policy comparator |
 | TQC | SB3-Contrib | 连续 / continuous | 截断分位数分布式评论家 / truncated-quantile critic |
+| QR-DQN / TRPO / Recurrent PPO / ARS | SB3-Contrib | 离散或连续 / discrete or continuous | V3.2 已登记扩展方法 / registered V3.2 methods |
 | MPC | SciPy 约束优化 / constrained optimization | 连续约束 / constrained continuous | 滚动时域控制基线 / receding-horizon control baseline |
+| FCFS | 后端确定性规则 / deterministic backend rule | 连续中性动作 / neutral continuous | 非优化规则对照 / non-optimizing comparator |
 
-![移动端七算法矩阵](docs/assets/mobile-seven-algorithm-matrix-v2.jpg)
+![移动端共享方法矩阵](docs/assets/mobile-seven-algorithm-matrix-v2.jpg)
 
 短步数 `smoke` 只验证数据、训练、测试和产物接线，不证明收敛、优越性或现场适用性。正式比较必须固定数据哈希、环境版本、种子、预算和评价口径，并保留完整产物。<br>
 A short `smoke` run verifies only data, training, evaluation, and artifact wiring; it does not prove convergence, superiority, or site applicability. A formal comparison must pin the data hash, environment version, seeds, budget, evaluation protocol, and complete artifacts.

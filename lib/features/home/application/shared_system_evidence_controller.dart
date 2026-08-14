@@ -32,6 +32,16 @@ class SharedSystemEvidence {
   final double duplicateSuppressionPercent;
 
   factory SharedSystemEvidence.fromJson(Map<String, dynamic> json) {
+    final frontends = json['frontends'];
+    final frontendIds = frontends is List
+        ? frontends.map((item) => item.toString()).toSet()
+        : const <String>{};
+    if (json['backend_id'] != 'port-dt-multi' ||
+        json['shared_backend_verified'] != true ||
+        !frontendIds.contains('web') ||
+        !frontendIds.contains('flutter_mobile')) {
+      throw const FormatException('响应未通过 Web / Flutter 共享后端身份校验');
+    }
     final business = _map(json['business_benchmark']);
     final claims = _map(business['claims_percent']);
     final workflow = _map(json['mobile_workflow_benchmark']);

@@ -63,6 +63,16 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
         return base.appendingPathComponent("港航演示中心/Runtime", isDirectory: true)
     }()
 
+    private func expandedPath(_ value: String) -> String {
+        (value as NSString).expandingTildeInPath
+    }
+
+    private func expandedArgument(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "$HOME", with: NSHomeDirectory())
+            .replacingOccurrences(of: "${HOME}", with: NSHomeDirectory())
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         do {
@@ -299,7 +309,7 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = ["-lc", "exec \(service.command)"]
-        process.currentDirectoryURL = URL(fileURLWithPath: service.workDir, isDirectory: true)
+        process.currentDirectoryURL = URL(fileURLWithPath: expandedPath(service.workDir), isDirectory: true)
         process.standardOutput = logHandle
         process.standardError = logHandle
         try process.run()
@@ -329,9 +339,9 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
             let handle = try FileHandle(forWritingTo: logURL)
             try handle.seekToEnd()
             let process = Process()
-            process.executableURL = URL(fileURLWithPath: external.executable)
-            process.arguments = external.arguments
-            process.currentDirectoryURL = URL(fileURLWithPath: external.workDir, isDirectory: true)
+            process.executableURL = URL(fileURLWithPath: expandedPath(external.executable))
+            process.arguments = external.arguments.map(expandedArgument)
+            process.currentDirectoryURL = URL(fileURLWithPath: expandedPath(external.workDir), isDirectory: true)
             process.standardOutput = handle
             process.standardError = handle
             try process.run()
@@ -603,4 +613,3 @@ let application = NSApplication.shared
 let applicationDelegate = SystemShellDelegate()
 application.delegate = applicationDelegate
 application.run()
-

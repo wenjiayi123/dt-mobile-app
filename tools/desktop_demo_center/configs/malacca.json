@@ -9,8 +9,8 @@
     {
       "id": "malacca",
       "name": "马六甲推演服务",
-      "workDir": "/Users/apple/Desktop/马六甲沙盘港口推演",
-      "command": "/usr/bin/env PATH='/Users/apple/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:/Users/apple/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback:/usr/bin:/bin:/usr/sbin:/sbin' OPEN_BROWSER=0 HOST=127.0.0.1 PORT=5174 bash scripts/demo/start_web_demo.sh",
+      "workDir": "~/Desktop/马六甲沙盘港口推演",
+      "command": "/usr/bin/env PATH='/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin' OPEN_BROWSER=0 HOST=127.0.0.1 PORT=5174 bash scripts/demo/start_web_demo.sh",
       "processSignature": "vite --host",
       "healthURL": "http://127.0.0.1:5174/api/rl/health",
       "healthContains": "malacca-reference-rl",
@@ -20,4 +20,3 @@
   "stopServiceIDs": ["malacca"],
   "external": null
 }
-

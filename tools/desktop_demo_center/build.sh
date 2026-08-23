@@ -3,7 +3,7 @@ set -euo pipefail
 
 BUILDER_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$BUILDER_DIR/.build"
-TARGET_APP="/Users/apple/Desktop/港航演示中心.app"
+TARGET_APP="${PORT_DEMO_APP_PATH:-$HOME/Desktop/港航演示中心.app}"
 SYSTEMS_DIR="$TARGET_APP/Contents/Resources/Systems"
 
 mkdir -p "$BUILD_DIR"
@@ -72,4 +72,3 @@ make_system "小懿AI" "com.wenjiayi.portdemo.xiaoyi" "xiaoyi" "sparkles" 0.92 0
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$TARGET_APP" >/dev/null 2>&1 || true
 
 echo "$TARGET_APP"
-

@@ -9,8 +9,8 @@
     {
       "id": "port-dt",
       "name": "港口数字孪生 API",
-      "workDir": "/Users/apple/Desktop/模拟器/port-dt-multi",
-      "command": "/usr/bin/env PORT_DT_CORS_ORIGINS='http://127.0.0.1:8000,http://localhost:8000,http://127.0.0.1:7357,http://localhost:7357,http://127.0.0.1:8765,http://localhost:8765' PORT_DT_ENABLE_DESKTOP_INTEGRATIONS=1 XIAOYI_AI_BASE_URL='http://127.0.0.1:8010' XIAOYI_AI_PROJECT='/Users/apple/Desktop/小懿AI' XIAOYI_AI_START_COMMAND='bash run.sh' SAILING_SIM_GODOT='/Applications/Godot.app/Contents/MacOS/Godot' SAILING_SIM_PROJECT='/Users/apple/Desktop/航行模拟器' .venv312/bin/python -m uvicorn app.server:app --host 127.0.0.1 --port 8000",
+      "workDir": "~/Desktop/模拟器/port-dt-multi",
+      "command": "/usr/bin/env PORT_DT_CORS_ORIGINS='http://127.0.0.1:8000,http://localhost:8000,http://127.0.0.1:7357,http://localhost:7357,http://127.0.0.1:8765,http://localhost:8765' PORT_DT_ENABLE_DESKTOP_INTEGRATIONS=1 XIAOYI_AI_BASE_URL='http://127.0.0.1:8010' XIAOYI_AI_PROJECT=\"$HOME/Desktop/小懿AI\" XIAOYI_AI_START_COMMAND='bash run.sh' SAILING_SIM_GODOT='/Applications/Godot.app/Contents/MacOS/Godot' SAILING_SIM_PROJECT=\"$HOME/Desktop/航行模拟器\" .venv312/bin/python -m uvicorn app.server:app --host 127.0.0.1 --port 8000",
       "processSignature": "uvicorn app.server:app",
       "healthURL": "http://127.0.0.1:8000/health/live",
       "healthContains": "alive",
@@ -20,4 +20,3 @@
   "stopServiceIDs": ["port-dt"],
   "external": null
 }
-

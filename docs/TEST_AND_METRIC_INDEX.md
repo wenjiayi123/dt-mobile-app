@@ -1,24 +1,24 @@
-# 移动端开源证据索引
+# 移动端测试与指标索引
 
 本仓库是数字孪生 AI 港口双端系统的 Flutter 前台，不复制 Web 决策后端的训练产物或港口运行数据。
 
-## 本仓库可复现证据
+## 本仓库测试
 
-- `bash scripts/check.sh`：Dart 格式、Flutter 静态分析和客户端测试；2026-07-26 固定发布快照为 25 项客户端测试通过。
-- `bash scripts/check_backend.sh`：独立 AIS 研究合同与 API 测试；2026-07-24 固定发布快照为 19 项测试通过。
+- `bash scripts/check.sh`：Dart 格式、Flutter 静态分析和客户端测试；记录为 25 项客户端测试通过。
+- `bash scripts/check_backend.sh`：独立 AIS 研究合同与 API 测试；记录为 19 项测试通过。
 - `scripts/smoke_all_baselines.py`：PPO、SAC、TD3、DQN、LOS-PID 各执行 128 步接线测试。该结果只证明训练、保存和留出测试链路可运行，不证明算法收敛或港口收益。
-- `scripts/release_check.sh`：串联上述检查，并验证时间隔离、公开数据哈希、失效安全回执、Git 发布边界和敏感信息扫描。
+- `scripts/release_check.sh`：串联上述检查，并验证时间隔离、公开数据哈希、失效安全回执和敏感信息扫描。
 
-## 双端共享业务证据
+## 双端共享业务指标
 
 泊位利用率、平均待泊时间和能源成本等系统级指标由 Web 决策后端统一计算，权威证据位于配套 `port-dt-multi` 仓库：
 
 - `data/rl/business_kpi_benchmark_v1.json`
 - `data/rl/business_kpi_benchmark_v1_daily.csv`
 - `data/mobile/mobile_workflow_benchmark_v1.json`
-- `docs/RESUME_CLAIMS_DUAL_FRONTEND.md`
+- `docs/DUAL_FRONTEND_METRICS.md`
 
-## 双端共享算法与公开数据证据
+## 双端共享算法与公开数据
 
 移动端通过共享后端 `/api/rl/engine/capabilities` 与
 `/api/rl/benchmarks/summary?dataset_id=public_us_la_6min_v1` 核验：

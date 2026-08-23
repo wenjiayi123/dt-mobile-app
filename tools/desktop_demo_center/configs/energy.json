@@ -9,7 +9,7 @@
     {
       "id": "energy",
       "name": "能碳前后端闭环",
-      "workDir": "/Users/apple/Desktop/能碳驾驶舱",
+      "workDir": "~/Desktop/能碳驾驶舱",
       "command": "make demo",
       "processSignature": "make demo",
       "healthURL": "http://127.0.0.1:5173/",
@@ -20,4 +20,3 @@
   "stopServiceIDs": ["energy"],
   "external": null
 }
-

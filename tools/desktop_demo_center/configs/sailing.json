@@ -10,9 +10,8 @@
   "external": {
     "id": "sailing",
     "executable": "/Applications/Godot.app/Contents/MacOS/Godot",
-    "arguments": ["--path", "/Users/apple/Desktop/航行模拟器"],
-    "workDir": "/Users/apple/Desktop/航行模拟器",
+    "arguments": ["--path", "$HOME/Desktop/航行模拟器"],
+    "workDir": "~/Desktop/航行模拟器",
     "processSignature": "Godot"
   }
 }
-

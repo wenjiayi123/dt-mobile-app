@@ -1,4 +1,4 @@
-# 测试与验收
+# 测试说明
 
 ## Flutter
 
@@ -26,10 +26,10 @@ bash scripts/check_backend.sh
 
 预期每个算法都返回 `TRAINED` 和 `COMPLETED`，并产生非空测试轨迹。它不属于收敛测试。
 
-## 发布检查
+## 完整项目检查
 
 ```bash
 PORTAI_PYTHON=.venv/bin/python bash scripts/release_check.sh
 ```
 
-检查数据哈希、Python 编译/测试、Flutter 质量门槛、独立 AIS 五方法 128-step 接线、训练渲染隔离、来源不明资产和高风险 fake 标记。
+检查数据哈希、Python 编译与测试、Flutter 质量、独立 AIS 五方法 128-step 接线、训练渲染隔离、资产来源和高风险 fake 标记。

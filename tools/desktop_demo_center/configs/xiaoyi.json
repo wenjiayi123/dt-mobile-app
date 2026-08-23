@@ -9,7 +9,7 @@
     {
       "id": "xiaoyi",
       "name": "小懿本地智能服务",
-      "workDir": "/Users/apple/Desktop/小懿AI",
+      "workDir": "~/Desktop/小懿AI",
       "command": "/usr/bin/env MALACCA_PORT=5174 PORT_DT_SERVER_PORT=8000 ENERGY_FRONTEND_PORT=5173 ENERGY_BACKEND_PORT=8808 bash run.sh",
       "processSignature": "bash run.sh",
       "healthURL": "http://127.0.0.1:8010/health",
@@ -20,4 +20,3 @@
   "stopServiceIDs": ["xiaoyi"],
   "external": null
 }
-

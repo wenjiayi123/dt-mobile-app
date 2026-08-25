@@ -358,7 +358,7 @@ class _EvaluationEvidence extends StatelessWidget {
     final safeIndex = frameIndex.clamp(0, state.replayFrames.length - 1);
     final frame = state.replayFrames[safeIndex];
     final values = state.replayFrames
-        .map((item) => _double(item['conflict_risk']))
+        .map((item) => _double(item['delay_index']))
         .toList(growable: false);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -406,23 +406,21 @@ class _EvaluationEvidence extends StatelessWidget {
             ),
             Expanded(
               child: _Metric(
-                label: '拥堵',
-                value:
-                    '${(_double(frame['congestion']) * 100).toStringAsFixed(1)}%',
+                label: '延误指数',
+                value: _double(frame['delay_index']).toStringAsFixed(3),
               ),
             ),
             Expanded(
               child: _Metric(
-                label: '冲突风险',
-                value:
-                    '${(_double(frame['conflict_risk']) * 100).toStringAsFixed(1)}%',
+                label: '护栏状态',
+                value: frame['guardrail_violation'] == true ? '违规' : '通过',
               ),
             ),
             Expanded(
               child: _Metric(
-                label: '动作',
+                label: '储能功率 / 资源系数',
                 value:
-                    '${_double(frame['flow_advisory']).toStringAsFixed(2)} / ${_double(frame['capacity_allocation']).toStringAsFixed(2)}',
+                    '${_double(frame['bess_kw']).toStringAsFixed(1)} / ${_double(frame['operational_resource_factor']).toStringAsFixed(2)}',
               ),
             ),
           ],

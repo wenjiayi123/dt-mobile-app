@@ -99,7 +99,7 @@ class StrategyPage extends ConsumerWidget {
                       'stateSummary':
                           '已播放独立测试集轨迹 ${training.replayFrames.length} 帧 · job=${training.jobId ?? 'unknown'}',
                       'policySetSummary':
-                          '${testedCandidate.title} · mean_reward=${metrics['mean_reward'] ?? 'n/a'} · dataset=${training.datasetSha256}',
+                          '${testedCandidate.title} · reward=${metrics['reward'] ?? metrics['mean_reward'] ?? 'n/a'} · dataset=${training.datasetSha256}',
                       'humanChoiceSummary': '测试产物已查看；生产执行仍为关闭状态',
                       'targetPolicyId': testedCandidate.id,
                       'targetPolicyTitle': testedCandidate.title,

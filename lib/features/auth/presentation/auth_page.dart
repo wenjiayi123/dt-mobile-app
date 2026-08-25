@@ -178,7 +178,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: viewState.hasToken || draftState.hasDraft
-                              ? () => _handleClear(context)
+                              ? _handleClear
                               : null,
                           icon: const Icon(Icons.delete_outline),
                           label: const Text('清空凭证'),
@@ -212,7 +212,26 @@ class _AuthPageState extends ConsumerState<AuthPage> {
     );
   }
 
-  void _handleClear(BuildContext context) {
+  Future<void> _handleClear() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('确认清空访问凭证'),
+        content: const Text('清空后，受保护的业务接口将停止使用当前凭证；后续需要重新配置。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('确认清空'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+
     final result = ref.read(authDraftControllerProvider.notifier).clearToken();
     _tokenController.clear();
 

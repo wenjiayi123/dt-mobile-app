@@ -82,6 +82,28 @@ void main() {
       });
     });
 
+    test('supports explicitly clearing run identities between requests', () {
+      const previous = RlTrainingState(
+        requestId: 'old-request',
+        jobId: 'old-job',
+        policyVersion: 'old-job',
+      );
+
+      final cleared = previous.copyWith(
+        requestId: null,
+        jobId: null,
+        policyVersion: '—',
+        history: const <RlMetricPoint>[],
+        replayFrames: const <Map<String, dynamic>>[],
+      );
+
+      expect(cleared.requestId, isNull);
+      expect(cleared.jobId, isNull);
+      expect(cleared.policyVersion, '—');
+      expect(cleared.history, isEmpty);
+      expect(cleared.replayFrames, isEmpty);
+    });
+
     test('uses localhost for Flutter Web and emulator mapping for Android', () {
       expect(
         AppConfig.resolveApiBaseUrl(configured: '', web: true),

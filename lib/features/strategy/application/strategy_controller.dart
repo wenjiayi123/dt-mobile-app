@@ -137,6 +137,7 @@ class StrategyRiskInterval {
   final String prefix;
 
   String get displayText {
+    if (unit.toLowerCase() == 'n/a') return '未提供';
     final lowText = _formatValue(low);
     final highText = _formatValue(high);
     if (low.toDouble() == high.toDouble()) {

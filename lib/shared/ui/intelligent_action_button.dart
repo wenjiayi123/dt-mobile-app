@@ -91,9 +91,12 @@ class _IntelligentActionButtonState extends State<IntelligentActionButton>
     final height = widget.compact ? 52.0 : 62.0;
 
     return Semantics(
+      container: true,
       button: true,
       enabled: enabled,
       label: widget.label,
+      excludeSemantics: true,
+      onTap: enabled ? _run : null,
       child: AnimatedBuilder(
         animation: Listenable.merge([_ambientController, _impactController]),
         builder: (context, child) {

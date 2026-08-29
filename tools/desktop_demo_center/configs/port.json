@@ -1,0 +1,22 @@
+{
+  "id": "port",
+  "name": "港口数字孪生 V3.2",
+  "subtitle": "12 方法决策中枢 · 可审计强化学习与小懿真实联动",
+  "displayURL": "http://127.0.0.1:8000/v3",
+  "width": 1450,
+  "height": 900,
+  "services": [
+    {
+      "id": "port-dt",
+      "name": "港口数字孪生 API",
+      "workDir": "~/Desktop/模拟器/port-dt-multi",
+      "command": "/usr/bin/env PORT_DT_CORS_ORIGINS='http://127.0.0.1:8000,http://localhost:8000,http://127.0.0.1:7357,http://localhost:7357,http://127.0.0.1:8765,http://localhost:8765' PORT_DT_ENABLE_DESKTOP_INTEGRATIONS=1 XIAOYI_AI_BASE_URL='http://127.0.0.1:8010' XIAOYI_AI_PROJECT=\"$HOME/Desktop/小懿AI\" XIAOYI_AI_START_COMMAND='bash run.sh' SAILING_SIM_GODOT='/Applications/Godot.app/Contents/MacOS/Godot' SAILING_SIM_PROJECT=\"$HOME/Desktop/航行模拟器\" .venv312/bin/python -m uvicorn app.server:app --host 127.0.0.1 --port 8000",
+      "processSignature": "uvicorn app.server:app",
+      "healthURL": "http://127.0.0.1:8000/health/live",
+      "healthContains": "alive",
+      "startupTimeout": 45
+    }
+  ],
+  "stopServiceIDs": ["port-dt"],
+  "external": null
+}

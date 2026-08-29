@@ -1,0 +1,22 @@
+{
+  "id": "energy",
+  "name": "能碳驾驶舱",
+  "subtitle": "港口能源调度 · 公共数据校准实时模拟与准入门禁",
+  "displayURL": "http://127.0.0.1:5173/",
+  "width": 1450,
+  "height": 900,
+  "services": [
+    {
+      "id": "energy",
+      "name": "能碳前后端闭环",
+      "workDir": "~/Desktop/能碳驾驶舱",
+      "command": "make demo",
+      "processSignature": "make demo",
+      "healthURL": "http://127.0.0.1:5173/",
+      "healthContains": "港口能碳",
+      "startupTimeout": 90
+    }
+  ],
+  "stopServiceIDs": ["energy"],
+  "external": null
+}

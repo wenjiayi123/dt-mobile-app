@@ -4,7 +4,7 @@ Flutter 默认连接 Web 工程 `port-dt-multi` 的 FastAPI 服务：
 
 | 方法与路径 | 移动端用途 |
 |---|---|
-| `GET /api/mobile/status` | 核对共享后端身份、七算法、系统KPI与移动闭环证据 |
+| `GET /api/mobile/status` | 核对共享后端身份、双前端登记、系统KPI与移动闭环证据 |
 | `GET /api/mobile/situation` | 读取证据状态；默认公开回放，不冒充实时态势 |
 | `GET /api/mobile/alerts` | 初始系统告警快照 |
 | `WS /api/mobile/alerts/ws` | 告警与服务心跳 |
@@ -19,13 +19,25 @@ Flutter 默认连接 Web 工程 `port-dt-multi` 的 FastAPI 服务：
 
 | 方法与路径 | 移动端用途 |
 |---|---|
-| `GET /api/rl/engine/capabilities` | 一次读取七算法、数据登记和环境空间合同 |
+| `GET /api/rl/engine/capabilities` | 一次读取算法能力、数据登记和环境空间合同 |
 | `GET /api/rl/benchmarks/summary?dataset_id=...` | 核验多种子正式训练与MPC留出评测证据 |
 | `GET /api/rl/train/baselines?dataset_id=...` | 三维推演前复核精确算法集合 |
 | `POST /api/rl/train/requests` | 提交数据指纹和训练参数；不直接创建训练进程 |
 | `GET /api/rl/train/requests/{id}` | 同步异人审批、训练和评测状态 |
+| `GET /api/rl/strategies` | 读取已登记且完成留出测试的模型 |
+| `POST /api/rl/simulate` | 后端执行独立留出集评测并返回轨迹；不生产下发 |
 
-共享算法合同固定为 SAC、PPO、TD3、DQN、A2C、TQC 与 MPC。首选公开基准
+小懿与 Web 的跨端联动使用以下真实后端回执：
+
+| 方法与路径 | 移动端用途 |
+|---|---|
+| `GET /api/rl/integration/health` | 核验 Web、RL、小懿服务和指令网关路由 |
+| `POST /api/assistant/actions/execute` | 将移动端小懿动作映射为 Web 注册动作；固定 `dry_run=true` |
+| `GET /api/mobile/audit/verify` | 在联动完成前复核共享 SHA-256 审计链 |
+
+共享核心兼容合同为 SAC、PPO、TD3、DQN、A2C、TQC 与 MPC。当前 V3.2
+能力清单还登记 QR-DQN、TRPO、Recurrent PPO、ARS 与 FCFS；移动端要求核心
+方法齐全且不接受未登记算法。首选公开基准
 `public_us_la_6min_v1` 必须对应 `port_ops_v2`、37维观测、5维建议动作和
 12类现实因素可用性掩码；移动端只能提交训练申请，电脑端异人批准后才能
 创建任务。独立 AIS 实验室的 PPO/SAC/TD3/DQN/LOS-PID 五方法合同不属于
@@ -34,6 +46,7 @@ Flutter 默认连接 Web 工程 `port-dt-multi` 的 FastAPI 服务：
 `RL_DATASET_ID` 默认取 `public_us_la_6min_v1`。接入另一个已登记港口场景时，
 通过 `--dart-define=RL_DATASET_ID=<dataset_id>` 切换；客户端仍要求环境和
 算法合同一致，并从后端动态显示数据标题、来源、边界、规模和端口配置。
+`public_cn_sha_hourly_v3` 使用 `port_ops_v3`，同样保持37维观测和5维建议动作。
 
 移动决策接口固定 `production_dispatch=false`，只返回干跑或阻断回执。真实
 南向执行必须单独经过 `/api/actuators/*` 的白名单、约束与双人确认。

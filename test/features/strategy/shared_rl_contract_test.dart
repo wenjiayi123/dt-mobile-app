@@ -6,36 +6,66 @@ import 'package:dt_mobile_app/features/strategy/domain/shared_rl_contract.dart';
 
 void main() {
   group('shared Web RL contract', () {
-    test('accepts exactly six RL algorithms plus MPC', () {
-      expect(
-        hasExactSharedRlContract(const <String>[
-          'mpc',
-          'tqc',
-          'a2c',
-          'dqn',
-          'td3',
-          'ppo',
-          'sac',
-        ]),
-        isTrue,
-      );
-      expect(
-        hasExactSharedRlContract(const <String>[
-          'sac',
-          'ppo',
-          'td3',
-          'dqn',
-          'mpc',
-        ]),
-        isFalse,
-      );
-    });
+    test(
+      'requires the core contract and accepts registered V3.2 expansion',
+      () {
+        expect(
+          hasCompatibleSharedRlContract(const <String>[
+            'mpc',
+            'tqc',
+            'a2c',
+            'dqn',
+            'td3',
+            'ppo',
+            'sac',
+          ]),
+          isTrue,
+        );
+        expect(
+          hasCompatibleSharedRlContract(const <String>[
+            'sac',
+            'ppo',
+            'td3',
+            'dqn',
+            'mpc',
+          ]),
+          isFalse,
+        );
+        expect(
+          hasCompatibleSharedRlContract(const <String>[
+            'sac',
+            'ppo',
+            'td3',
+            'dqn',
+            'a2c',
+            'tqc',
+            'qrdqn',
+            'trpo',
+            'recurrent_ppo',
+            'ars',
+            'mpc',
+            'fcfs',
+          ]),
+          isTrue,
+        );
+        expect(
+          hasCompatibleSharedRlContract(<String>{
+            ...requiredSharedAlgorithmIds,
+            'unregistered_method',
+          }),
+          isFalse,
+        );
+      },
+    );
 
     test('uses the port_ops_v2 public benchmark defaults', () {
       const config = RlTrainingConfig();
 
       expect(preferredSharedDatasetId, 'public_us_la_6min_v1');
-      expect(preferredSharedEnvironmentVersion, 'port_ops_v2');
+      expect(
+        supportedSharedEnvironmentVersions,
+        containsAll(['port_ops_v2', 'port_ops_v3']),
+      );
       expect(sharedObservationDimensions, 37);
       expect(sharedActionDimensions, 5);
       expect(sharedRealityFactorCount, 12);
@@ -50,6 +80,46 @@ void main() {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
       });
+    });
+
+    test('supports explicitly clearing run identities between requests', () {
+      const previous = RlTrainingState(
+        requestId: 'old-request',
+        jobId: 'old-job',
+        policyVersion: 'old-job',
+      );
+
+      final cleared = previous.copyWith(
+        requestId: null,
+        jobId: null,
+        policyVersion: '—',
+        history: const <RlMetricPoint>[],
+        replayFrames: const <Map<String, dynamic>>[],
+      );
+
+      expect(cleared.requestId, isNull);
+      expect(cleared.jobId, isNull);
+      expect(cleared.policyVersion, '—');
+      expect(cleared.history, isEmpty);
+      expect(cleared.replayFrames, isEmpty);
+    });
+
+    test('uses localhost for Flutter Web and emulator mapping for Android', () {
+      expect(
+        AppConfig.resolveApiBaseUrl(configured: '', web: true),
+        'http://127.0.0.1:8000',
+      );
+      expect(
+        AppConfig.resolveApiBaseUrl(configured: '', web: false),
+        'http://10.0.2.2:8000',
+      );
+      expect(
+        AppConfig.resolveApiBaseUrl(
+          configured: ' https://port.example/api ',
+          web: true,
+        ),
+        'https://port.example/api',
+      );
     });
   });
 }

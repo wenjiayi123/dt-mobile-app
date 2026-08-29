@@ -32,8 +32,25 @@ class SharedSystemEvidence {
   final double duplicateSuppressionPercent;
 
   factory SharedSystemEvidence.fromJson(Map<String, dynamic> json) {
+    final frontends = json['frontends'];
+    final frontendIds = frontends is List
+        ? frontends.map((item) => item.toString()).toSet()
+        : const <String>{};
+    if (json['backend_id'] != 'port-dt-multi' ||
+        json['shared_backend_verified'] != true ||
+        !frontendIds.contains('web') ||
+        !frontendIds.contains('flutter_mobile')) {
+      throw const FormatException('响应未通过 Web / Flutter 共享后端身份校验');
+    }
     final business = _map(json['business_benchmark']);
-    final claims = _map(business['claims_percent']);
+    // The shared backend renamed `claims_percent` to
+    // `summary_metrics_percent` when the values became an explicitly scoped
+    // benchmark summary. Keep the legacy key readable for older deployments,
+    // but prefer the current contract so a successful response never renders
+    // real benchmark values as zero.
+    final currentMetrics = _map(business['summary_metrics_percent']);
+    final legacyMetrics = _map(business['claims_percent']);
+    final metrics = currentMetrics.isNotEmpty ? currentMetrics : legacyMetrics;
     final workflow = _map(json['mobile_workflow_benchmark']);
     final results = _map(workflow['results']);
     final runtimeAudit = _map(json['audit']);
@@ -42,14 +59,14 @@ class SharedSystemEvidence {
       datasetId: business['dataset_id']?.toString() ?? 'unknown',
       testRows: _int(business['test_rows']),
       berthImprovementPercent: _double(
-        claims['berth_utilization_relative_improvement_percent'],
+        metrics['berth_utilization_relative_improvement_percent'],
       ),
       berthPointGain: _double(business['berth_utilization_point_gain']),
       waitReductionPercent: _double(
-        claims['average_waiting_time_reduction_percent'],
+        metrics['average_waiting_time_reduction_percent'],
       ),
       costReductionPercent: _double(
-        claims['scenario_energy_cost_reduction_percent'],
+        metrics['scenario_energy_cost_reduction_percent'],
       ),
       workflowOperations: _int(workflow['operations']),
       auditChainValid:

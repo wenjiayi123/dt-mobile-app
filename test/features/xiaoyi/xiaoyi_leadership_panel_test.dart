@@ -8,6 +8,7 @@ import 'package:dt_mobile_app/features/audit/application/audit_controller.dart';
 import 'package:dt_mobile_app/features/home/application/home_tab_notifier.dart';
 import 'package:dt_mobile_app/features/strategy/application/strategy_controller.dart';
 import 'package:dt_mobile_app/features/xiaoyi/presentation/xiaoyi_leadership_panel.dart';
+import 'package:dt_mobile_app/features/xiaoyi/application/xiaoyi_web_linkage.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -24,6 +25,9 @@ void main() {
           auditUploadEnabledProvider.overrideWithValue(false),
           alertsSnapshotProvider.overrideWith(_FakeAlertsSnapshotNotifier.new),
           strategyControllerProvider.overrideWith(_FakeStrategyController.new),
+          xiaoyiWebLinkageStatusProvider.overrideWith(
+            (ref) async => _verifiedWebStatus,
+          ),
         ],
         child: MaterialApp(
           home: Scaffold(
@@ -63,6 +67,9 @@ void main() {
           auditUploadEnabledProvider.overrideWithValue(false),
           alertsSnapshotProvider.overrideWith(_FakeAlertsSnapshotNotifier.new),
           strategyControllerProvider.overrideWith(_FakeStrategyController.new),
+          xiaoyiWebLinkageStatusProvider.overrideWith(
+            (ref) async => _verifiedWebStatus,
+          ),
         ],
         child: MaterialApp(
           home: Scaffold(
@@ -120,3 +127,16 @@ class _FakeStrategyController extends StrategyController {
   @override
   Future<void> refreshCandidates({bool silent = false}) async {}
 }
+
+final _verifiedWebStatus = XiaoyiWebLinkageStatus(
+  backendId: 'port-dt-multi',
+  sharedBackendVerified: true,
+  webFrontendRegistered: true,
+  mobileFrontendRegistered: true,
+  rlInterfaceOnline: true,
+  assistantGatewayAvailable: true,
+  xiaoyiOnline: false,
+  xiaoyiLabel: '小懿未在线 · 后端证据兜底',
+  auditChainValid: true,
+  checkedAt: DateTime.utc(2026, 8, 14),
+);

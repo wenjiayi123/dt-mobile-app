@@ -100,22 +100,24 @@ class _RlDecisionConsoleState extends ConsumerState<RlDecisionConsole> {
                 child: Icon(Icons.science_outlined, color: accent),
               ),
               const SizedBox(width: 10),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '真实训练与测试证据',
-                      style: TextStyle(
+                      training.config.isTrainable ? '真实训练与测试证据' : '真实基线评测与测试证据',
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 17,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    SizedBox(height: 2),
+                    const SizedBox(height: 2),
                     Text(
-                      'TRAIN HEADLESS → HELD-OUT TEST → RECORDED REPLAY',
-                      style: TextStyle(
+                      training.config.isTrainable
+                          ? 'TRAIN HEADLESS → HELD-OUT TEST → RECORDED REPLAY'
+                          : 'DETERMINISTIC BASELINE → HELD-OUT TEST → RECORDED REPLAY',
+                      style: const TextStyle(
                         color: Color(0xFF7DD3FC),
                         fontSize: 9,
                         fontWeight: FontWeight.w800,
@@ -130,6 +132,7 @@ class _RlDecisionConsoleState extends ConsumerState<RlDecisionConsole> {
           const SizedBox(height: 13),
           _EvidenceSwitch(
             selected: _view,
+            isTrainable: training.config.isTrainable,
             onSelected: (value) => setState(() => _view = value),
           ),
           const SizedBox(height: 12),
@@ -184,9 +187,11 @@ class _RlDecisionConsoleState extends ConsumerState<RlDecisionConsole> {
           ),
           if (!training.hasRequest) ...[
             const SizedBox(height: 7),
-            const Text(
-              '先在上方选择七算法矩阵之一并提交训练；没有真实任务时不生成曲线或测试结论。',
-              style: TextStyle(color: Color(0xFFFFD08A), fontSize: 9),
+            Text(
+              training.config.isTrainable
+                  ? '先在上方共享方法矩阵中选择已登记方法并提交训练；没有真实任务时不生成曲线或测试结论。'
+                  : '先提交基线评测申请并由电脑端人工批准；没有真实评测任务时不生成测试结论。',
+              style: const TextStyle(color: Color(0xFFFFD08A), fontSize: 9),
             ),
           ],
         ],
@@ -196,15 +201,24 @@ class _RlDecisionConsoleState extends ConsumerState<RlDecisionConsole> {
 }
 
 class _EvidenceSwitch extends StatelessWidget {
-  const _EvidenceSwitch({required this.selected, required this.onSelected});
+  const _EvidenceSwitch({
+    required this.selected,
+    required this.isTrainable,
+    required this.onSelected,
+  });
 
   final _EvidenceView selected;
+  final bool isTrainable;
   final ValueChanged<_EvidenceView> onSelected;
 
   @override
   Widget build(BuildContext context) {
-    const items = [
-      (_EvidenceView.training, '训练曲线', Icons.show_chart_rounded),
+    final items = [
+      (
+        _EvidenceView.training,
+        isTrainable ? '训练曲线' : '基线说明',
+        Icons.show_chart_rounded,
+      ),
       (_EvidenceView.evaluation, '测试回放', Icons.play_circle_outline),
       (_EvidenceView.baselines, '算法矩阵', Icons.compare_arrows_rounded),
       (_EvidenceView.data, '数据证据', Icons.fingerprint_rounded),
@@ -344,7 +358,7 @@ class _EvaluationEvidence extends StatelessWidget {
     final safeIndex = frameIndex.clamp(0, state.replayFrames.length - 1);
     final frame = state.replayFrames[safeIndex];
     final values = state.replayFrames
-        .map((item) => _double(item['conflict_risk']))
+        .map((item) => _double(item['delay_index']))
         .toList(growable: false);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -392,23 +406,21 @@ class _EvaluationEvidence extends StatelessWidget {
             ),
             Expanded(
               child: _Metric(
-                label: '拥堵',
-                value:
-                    '${(_double(frame['congestion']) * 100).toStringAsFixed(1)}%',
+                label: '延误指数',
+                value: _double(frame['delay_index']).toStringAsFixed(3),
               ),
             ),
             Expanded(
               child: _Metric(
-                label: '冲突风险',
-                value:
-                    '${(_double(frame['conflict_risk']) * 100).toStringAsFixed(1)}%',
+                label: '护栏状态',
+                value: frame['guardrail_violation'] == true ? '违规' : '通过',
               ),
             ),
             Expanded(
               child: _Metric(
-                label: '动作',
+                label: '储能功率 / 资源系数',
                 value:
-                    '${_double(frame['flow_advisory']).toStringAsFixed(2)} / ${_double(frame['capacity_allocation']).toStringAsFixed(2)}',
+                    '${_double(frame['bess_kw']).toStringAsFixed(1)} / ${_double(frame['operational_resource_factor']).toStringAsFixed(2)}',
               ),
             ),
           ],
@@ -495,13 +507,13 @@ class _BaselineEvidence extends StatelessWidget {
               ],
             ),
           ),
-        if (!hasExactSharedRlContract(
+        if (!hasCompatibleSharedRlContract(
           training.algorithms.map((item) => item.id),
         ))
           const _BoundaryBanner(
             icon: Icons.error_outline,
-            title: '服务端七算法契约尚未核验',
-            detail: '正常状态必须恰好返回 SAC、PPO、TD3、DQN、A2C、TQC、MPC。',
+            title: '服务端共享算法合同尚未核验',
+            detail: '必须包含核心 6 RL + MPC；V3.2 扩展方法只能来自已登记能力清单。',
             color: Color(0xFFFF7A9D),
           ),
       ],

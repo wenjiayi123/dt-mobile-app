@@ -121,9 +121,11 @@ class _RlTrainingLinkageCardState extends ConsumerState<RlTrainingLinkageCard> {
             ],
           ),
           const SizedBox(height: 11),
-          const Text(
-            '手机只负责提交与查看证据。电脑端批准后，Python 训练器仅读取时间顺序训练集并关闭渲染；训练进程结束后，才在留出测试集记录回放轨迹。',
-            style: TextStyle(
+          Text(
+            state.config.isTrainable
+                ? '手机只负责提交与查看证据。电脑端批准后，Python 训练器仅读取时间顺序训练集并关闭渲染；训练进程结束后，才在留出测试集记录回放轨迹。'
+                : '手机只负责提交与查看证据。电脑端批准后，确定性基线直接在固定留出测试集评测，不伪装成训练，也不产生训练收敛曲线。',
+            style: const TextStyle(
               color: Color(0xFFD2E5FF),
               fontSize: 11,
               height: 1.45,
@@ -181,7 +183,7 @@ class _RlTrainingLinkageCardState extends ConsumerState<RlTrainingLinkageCard> {
                           if (config != null) controller.updateConfig(config);
                         },
                   icon: const Icon(Icons.tune_rounded),
-                  label: const Text('配置训练参数'),
+                  label: Text(state.config.isTrainable ? '配置训练参数' : '配置评测参数'),
                 ),
               ),
               const SizedBox(width: 8),
@@ -198,7 +200,7 @@ class _RlTrainingLinkageCardState extends ConsumerState<RlTrainingLinkageCard> {
                           ),
                         )
                       : Icon(_primaryIcon(state.phase)),
-                  label: Text(_primaryLabel(state.phase)),
+                  label: Text(_primaryLabel(state)),
                 ),
               ),
             ],
@@ -314,6 +316,8 @@ class _RlTrainingLinkageCardState extends ConsumerState<RlTrainingLinkageCard> {
   }
 
   Future<bool> _submitTrainingRequest(RlTrainingController controller) async {
+    final isTrainable = ref.read(rlTrainingProvider).config.isTrainable;
+    final taskLabel = isTrainable ? '训练' : '基线评测';
     final ok = await controller.submitTrainingRequest();
     if (!mounted || !ok) return ok;
     final requestId = ref.read(rlTrainingProvider).requestId;
@@ -323,15 +327,15 @@ class _RlTrainingLinkageCardState extends ConsumerState<RlTrainingLinkageCard> {
           'ai_suggestion',
           meta: <String, Object?>{
             'source': 'mobile_rl_training_request',
-            'stateSummary': '数据指纹与训练参数已提交电脑端',
-            'policySetSummary': '真实七算法训练申请 $requestId',
+            'stateSummary': '数据指纹与$taskLabel参数已提交电脑端',
+            'policySetSummary': '共享 Web 后端$taskLabel申请 $requestId',
             'humanChoiceSummary': '等待电脑端人工批准，移动端不可绕过',
-            'targetPolicyTitle': '港口交通流策略训练',
+            'targetPolicyTitle': '港口交通流策略$taskLabel',
           },
         );
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
-      ..showSnackBar(const SnackBar(content: Text('训练申请已到电脑端，请切换到电脑进行人工批准')));
+      ..showSnackBar(SnackBar(content: Text('$taskLabel申请已到电脑端，请切换到电脑进行人工批准')));
     return true;
   }
 
@@ -354,23 +358,32 @@ class _RlTrainingLinkageCardState extends ConsumerState<RlTrainingLinkageCard> {
       case RlDesktopTrainingPhase.idle:
       case RlDesktopTrainingPhase.rejected:
       case RlDesktopTrainingPhase.failed:
+        if (!state.sharedContractVerified) {
+          return controller.checkConnection;
+        }
         return () async {
           await _submitTrainingRequest(controller);
         };
     }
   }
 
-  static String _primaryLabel(RlDesktopTrainingPhase phase) => switch (phase) {
-    RlDesktopTrainingPhase.checkingConnection => '检查电脑端连接',
-    RlDesktopTrainingPhase.preparingRequest => '正在提交训练申请',
-    RlDesktopTrainingPhase.waitingDesktopApproval => '检查电脑端审批结果',
-    RlDesktopTrainingPhase.approved ||
-    RlDesktopTrainingPhase.training => '刷新训练进度',
-    RlDesktopTrainingPhase.evaluating => '刷新留出测试',
-    RlDesktopTrainingPhase.completed => '刷新训练结果',
-    RlDesktopTrainingPhase.rejected => '修改后重新提交',
-    _ => '向电脑端提交训练申请',
-  };
+  static String _primaryLabel(RlTrainingState state) {
+    if (!state.sharedContractVerified && !state.isBusy) {
+      return '重新核验共享后端';
+    }
+    return switch (state.phase) {
+      RlDesktopTrainingPhase.checkingConnection => '检查电脑端连接',
+      RlDesktopTrainingPhase.preparingRequest =>
+        state.config.isTrainable ? '正在提交训练申请' : '正在提交基线评测申请',
+      RlDesktopTrainingPhase.waitingDesktopApproval => '检查电脑端审批结果',
+      RlDesktopTrainingPhase.approved ||
+      RlDesktopTrainingPhase.training => '刷新训练进度',
+      RlDesktopTrainingPhase.evaluating => '刷新留出测试',
+      RlDesktopTrainingPhase.completed => '刷新训练结果',
+      RlDesktopTrainingPhase.rejected => '修改后重新提交',
+      _ => state.config.isTrainable ? '向电脑端提交训练申请' : '向电脑端提交基线评测申请',
+    };
+  }
 
   static IconData _primaryIcon(RlDesktopTrainingPhase phase) => switch (phase) {
     RlDesktopTrainingPhase.waitingDesktopApproval => Icons.approval_outlined,
@@ -402,9 +415,11 @@ class _TrainingHandoffSheet extends ConsumerWidget {
     final parametersReady = state.configSource != 'default';
     final canSubmit =
         parametersReady &&
+        state.sharedContractVerified &&
         state.desktopPanelActive &&
         !state.hasRequest &&
         !state.isBusy;
+    final taskLabel = state.config.isTrainable ? '训练' : '基线评测';
 
     return SafeArea(
       child: FractionallySizedBox(
@@ -431,22 +446,22 @@ class _TrainingHandoffSheet extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(width: 11),
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '手机 × 电脑训练接力',
-                          style: TextStyle(
+                          '手机 × 电脑$taskLabel接力',
+                          style: const TextStyle(
                             color: Colors.white,
                             fontSize: 19,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
-                        SizedBox(height: 2),
+                        const SizedBox(height: 2),
                         Text(
                           '先确定参数，再打开电脑端，最后由电脑人工批准',
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: Color(0xFF9DC8F8),
                             fontSize: 10,
                           ),
@@ -464,15 +479,17 @@ class _TrainingHandoffSheet extends ConsumerWidget {
               const SizedBox(height: 14),
               _HandoffStepCard(
                 number: '1',
-                title: '确定训练参数',
+                title: '确定$taskLabel参数',
                 status: parametersReady ? state.configSourceLabel : '等待选择',
                 active: parametersReady,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      '推荐值来自当前数据契约和可复现默认种子：PPO、2 万步、训练集无渲染。它只是起始配置，不代表已经收敛。',
-                      style: TextStyle(
+                    Text(
+                      state.config.isTrainable
+                          ? '推荐值来自当前数据契约和可复现默认种子：PPO、2 万步、训练集无渲染。它只是起始配置，不代表已经收敛。'
+                          : '确定性控制/规则基线不执行学习训练；参数只定义固定留出测试集上的可复现评测口径。',
+                      style: const TextStyle(
                         color: Color(0xFFD2E5FF),
                         fontSize: 10,
                         height: 1.45,
@@ -506,7 +523,7 @@ class _TrainingHandoffSheet extends ConsumerWidget {
               const SizedBox(height: 11),
               _HandoffStepCard(
                 number: '2',
-                title: '启动电脑端强化学习系统',
+                title: '启动电脑端策略评测系统',
                 status: state.desktopPanelActive ? '桌面审批页已打开' : '等待启动',
                 active: state.desktopPanelActive,
                 child: Column(
@@ -576,9 +593,11 @@ class _TrainingHandoffSheet extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      '手机提交后仍不会创建训练 Job。你需要切换到电脑，在“移动端训练申请”中点击“电脑端批准并启动训练”。',
-                      style: TextStyle(
+                    Text(
+                      state.config.isTrainable
+                          ? '手机提交后仍不会创建训练 Job。你需要切换到电脑，在“移动端训练申请”中点击“电脑端批准并启动训练”。'
+                          : '手机提交后仍不会绕过人工确认。你需要切换到电脑，在移动端申请中批准后，才会执行固定留出集基线评测。',
+                      style: const TextStyle(
                         color: Color(0xFFD2E5FF),
                         fontSize: 10,
                         height: 1.45,
@@ -591,15 +610,21 @@ class _TrainingHandoffSheet extends ConsumerWidget {
                         onPressed: canSubmit ? onSubmit : null,
                         icon: const Icon(Icons.send_to_mobile_outlined),
                         label: Text(
-                          state.hasRequest ? '训练申请已提交到电脑端' : '向电脑端提交训练申请',
+                          state.hasRequest
+                              ? '$taskLabel申请已提交到电脑端'
+                              : '向电脑端提交$taskLabel申请',
                         ),
                       ),
                     ),
-                    if (!parametersReady || !state.desktopPanelActive) ...[
+                    if (!parametersReady ||
+                        !state.sharedContractVerified ||
+                        !state.desktopPanelActive) ...[
                       const SizedBox(height: 7),
                       Text(
                         !parametersReady
                             ? '请先选择“小懿推荐参数”或“手动配置参数”。'
+                            : !state.sharedContractVerified
+                            ? '请先完成共享 Web 后端的数据、算法与环境合同核验。'
                             : '请先启动电脑端系统，确认桌面审批页在线。',
                         style: const TextStyle(
                           color: Color(0xFFFFD08A),
@@ -824,8 +849,8 @@ class _ConfigSummary extends StatelessWidget {
         ),
         Expanded(
           child: _ConfigItem(
-            label: config.algorithm == 'mpc' ? '滚动求解' : '训练步数',
-            value: config.algorithm == 'mpc'
+            label: !config.isTrainable ? '基线求解' : '训练步数',
+            value: !config.isTrainable
                 ? '无需训练'
                 : _compactInt(config.totalSteps),
           ),
@@ -833,7 +858,7 @@ class _ConfigSummary extends StatelessWidget {
         Expanded(
           child: _ConfigItem(
             label: '批大小',
-            value: config.algorithm == 'mpc' ? '不适用' : '${config.batchSize}',
+            value: !config.isTrainable ? '不适用' : '${config.batchSize}',
           ),
         ),
         Expanded(
@@ -893,8 +918,8 @@ class _DatasetEvidenceStrip extends StatelessWidget {
           ),
           Text(
             state.sharedContractVerified
-                ? '${state.algorithms.length}/7 算法契约已核验'
-                : '${state.algorithms.length}/7 算法契约待核验',
+                ? '${state.algorithms.length} 方法合同已核验'
+                : '${state.algorithms.length} 方法合同待核验',
             style: TextStyle(
               color: state.sharedContractVerified
                   ? const Color(0xFF76F7C5)
@@ -907,7 +932,7 @@ class _DatasetEvidenceStrip extends StatelessWidget {
             style: const TextStyle(color: Color(0xFF7BA2D4), fontSize: 9),
           ),
           Text(
-            '${state.formalRlRunCount}组RL正式训练 + ${state.formalControlBaselineCount}组MPC证据',
+            '${state.formalRlRunCount}组RL正式训练 + ${state.formalControlBaselineCount}组控制/规则证据',
             style: const TextStyle(color: Color(0xFF7BA2D4), fontSize: 9),
           ),
         ],
@@ -989,7 +1014,7 @@ class _TrainingProgressPanel extends StatelessWidget {
           children: [
             Expanded(
               child: _ProgressMetric(
-                label: state.config.algorithm == 'mpc' ? '求解方式' : '步数',
+                label: !state.config.isTrainable ? '求解方式' : '步数',
                 value:
                     '${state.step} / ${state.totalStepsReported > 0 ? state.totalStepsReported : state.config.totalSteps}',
               ),
@@ -997,7 +1022,7 @@ class _TrainingProgressPanel extends StatelessWidget {
             Expanded(
               child: _ProgressMetric(
                 label: '奖励',
-                value: state.reward == 0
+                value: state.history.isEmpty
                     ? '待采样'
                     : state.reward.toStringAsFixed(2),
               ),
@@ -1017,22 +1042,25 @@ class _TrainingProgressPanel extends StatelessWidget {
               Expanded(
                 child: _ProgressMetric(
                   label: '测试平均收益',
-                  value: (state.evaluationMetrics['mean_reward'] ?? 0)
+                  value:
+                      (state.evaluationMetrics['reward'] ??
+                              state.evaluationMetrics['mean_reward'] ??
+                              0)
+                          .toStringAsFixed(3),
+                ),
+              ),
+              Expanded(
+                child: _ProgressMetric(
+                  label: '测试延误指数',
+                  value: (state.evaluationMetrics['delay_index_mean'] ?? 0)
                       .toStringAsFixed(3),
                 ),
               ),
               Expanded(
                 child: _ProgressMetric(
-                  label: '测试平均拥堵',
+                  label: '护栏违规率',
                   value:
-                      '${((state.evaluationMetrics['mean_congestion'] ?? 0) * 100).toStringAsFixed(1)}%',
-                ),
-              ),
-              Expanded(
-                child: _ProgressMetric(
-                  label: '测试冲突风险',
-                  value:
-                      '${((state.evaluationMetrics['mean_conflict_risk'] ?? 0) * 100).toStringAsFixed(1)}%',
+                      '${((state.evaluationMetrics['guardrail_violation_rate'] ?? 0) * 100).toStringAsFixed(1)}%',
                 ),
               ),
               Expanded(
@@ -1175,7 +1203,7 @@ Future<RlTrainingConfig?> _showConfigSheet(
 ) async {
   var config = initial;
   final availableAlgorithms = algorithms.isEmpty
-      ? sharedRlAlgorithmIds
+      ? supportedSharedAlgorithmIds
             .map(
               (id) =>
                   MapEntry(id, sharedRlAlgorithmLabels[id] ?? id.toUpperCase()),
@@ -1220,7 +1248,7 @@ Future<RlTrainingConfig?> _showConfigSheet(
               DropdownButtonFormField<String>(
                 initialValue: config.algorithm,
                 decoration: const InputDecoration(
-                  labelText: '七算法矩阵（6 RL + 1 控制）',
+                  labelText: '共享算法矩阵（RL + 控制/规则基线）',
                 ),
                 items: [
                   for (final item in availableAlgorithms)
@@ -1230,7 +1258,7 @@ Future<RlTrainingConfig?> _showConfigSheet(
                   if (value == null) return;
                   config = config.copyWith(
                     algorithm: value,
-                    totalSteps: value == 'mpc'
+                    totalSteps: sharedNonTrainableAlgorithmIds.contains(value)
                         ? 0
                         : (config.totalSteps < 64 ? 20000 : config.totalSteps),
                   );
@@ -1252,19 +1280,19 @@ Future<RlTrainingConfig?> _showConfigSheet(
               ),
               const SizedBox(height: 14),
               _SheetChoiceRow(
-                title: config.algorithm == 'mpc' ? '求解方式' : '训练步数',
-                values: config.algorithm == 'mpc'
+                title: !config.isTrainable ? '求解方式' : '训练步数',
+                values: !config.isTrainable
                     ? const [0]
                     : const [5000, 20000, 100000],
                 selected: config.totalSteps,
                 label: (value) =>
-                    config.algorithm == 'mpc' ? '滚动时域优化' : _compactInt(value),
+                    !config.isTrainable ? '后端确定性基线评测' : _compactInt(value),
                 onSelected: (value) => setSheetState(
                   () => config = config.copyWith(totalSteps: value),
                 ),
               ),
               const SizedBox(height: 12),
-              if (config.algorithm != 'mpc')
+              if (config.isTrainable)
                 _SheetChoiceRow(
                   title: '批大小',
                   values: const [128, 256, 512],
@@ -1289,7 +1317,7 @@ Future<RlTrainingConfig?> _showConfigSheet(
                 ),
               ),
               const SizedBox(height: 14),
-              if (config.algorithm != 'mpc')
+              if (config.isTrainable)
                 Row(
                   children: [
                     Expanded(

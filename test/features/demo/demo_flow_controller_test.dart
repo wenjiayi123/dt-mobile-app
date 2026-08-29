@@ -67,5 +67,20 @@ void main() {
       expect(state.stage, DemoFlowStage.ready);
       expect(state.isRunning, isFalse);
     });
+
+    test('restoring defaults disables the optional UI tour', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      final controller = container.read(demoFlowProvider.notifier);
+      controller.setEnabled(true);
+      controller.start();
+      controller.reset();
+
+      final state = container.read(demoFlowProvider);
+      expect(state.enabled, isFalse);
+      expect(state.stage, DemoFlowStage.ready);
+      expect(state.logs, isEmpty);
+    });
   });
 }

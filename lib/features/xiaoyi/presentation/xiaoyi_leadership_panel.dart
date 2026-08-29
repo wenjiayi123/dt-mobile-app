@@ -11,6 +11,7 @@ import 'package:dt_mobile_app/features/situation/application/situation_controlle
 import 'package:dt_mobile_app/features/situation/presentation/twin_3d_screen.dart';
 import 'package:dt_mobile_app/features/strategy/application/strategy_controller.dart';
 import 'package:dt_mobile_app/features/xiaoyi/application/xiaoyi_leadership_controller.dart';
+import 'package:dt_mobile_app/features/xiaoyi/application/xiaoyi_web_linkage.dart';
 import 'package:dt_mobile_app/shared/ui/app_badge.dart';
 import 'package:dt_mobile_app/shared/ui/intelligent_action_button.dart';
 
@@ -54,6 +55,7 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
     final alertsAsync = ref.watch(alertsSnapshotProvider);
     final strategy = ref.watch(strategyControllerProvider);
     final audit = ref.watch(auditTimelineProvider);
+    final webLinkage = ref.watch(xiaoyiWebLinkageStatusProvider);
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
 
@@ -138,6 +140,8 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
             pendingExecutions: pendingExecution,
             auditCount: audit.items.length,
           ),
+          const SizedBox(height: 8),
+          _XiaoyiWebStatusStrip(status: webLinkage),
           if (!_isExpanded) ...[
             const SizedBox(height: 12),
             _XiaoyiCoreLinkageConsole(
@@ -268,6 +272,7 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
     if (_executingActionId != null) return;
 
     final controller = ref.read(xiaoyiLeadershipControllerProvider.notifier);
+    final auditNotifier = ref.read(auditTimelineProvider.notifier);
     final pendingAction = controller.judge(
       actionId: actionId,
       command: command,
@@ -307,13 +312,28 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
     if (action == null) return;
 
     try {
-      final result = await _applySideEffect(action);
+      // Verify the shared Web gateway before a local navigation can hide this
+      // panel. The gateway is dry-run only, so this never dispatches to port
+      // equipment or bypasses the later human approval boundary.
+      final webReceipt = await _requestWebReceipt(action);
+      final localResult = await _applySideEffect(action);
+      final result = webReceipt.verified == null
+          ? localResult
+          : localResult.copyWith(
+              tone:
+                  webReceipt.verified == false &&
+                      localResult.tone != AppBadgeTone.critical
+                  ? AppBadgeTone.watch
+                  : null,
+              webLinkageVerified: webReceipt.verified,
+              webLinkageMessage: webReceipt.message,
+            );
       final elapsed = DateTime.now().difference(startedAt);
       const minimumVisibleTime = Duration(milliseconds: 720);
       if (elapsed < minimumVisibleTime) {
         await Future<void>.delayed(minimumVisibleTime - elapsed);
       }
-      _recordLeadershipAudit(action, result);
+      _recordLeadershipAudit(auditNotifier, action, result);
 
       if (mounted) {
         setState(() => _lastResult = result);
@@ -328,6 +348,34 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
             duration: const Duration(seconds: 2),
           ),
         );
+    } catch (error) {
+      final elapsed = DateTime.now().difference(startedAt);
+      const minimumVisibleTime = Duration(milliseconds: 720);
+      if (elapsed < minimumVisibleTime) {
+        await Future<void>.delayed(minimumVisibleTime - elapsed);
+      }
+      final message = xiaoyiWebLinkageErrorMessage(error);
+      final failure = _XiaoyiExecutionResult(
+        title: '${action.label}未完成',
+        detail: '联动动作未获得完整后端回执：$message',
+        nextStep: '请确认 Web 共享后端已启动并重新执行；系统不会把未确认动作标记为成功。',
+        target: action.category.label,
+        tone: AppBadgeTone.critical,
+        webLinkageVerified: false,
+        webLinkageMessage: 'Web 共享链路未确认：$message',
+      );
+      _recordLeadershipFailure(auditNotifier, action, message);
+      if (mounted) setState(() => _lastResult = failure);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(
+            SnackBar(
+              content: Text('小懿联动未完成：$message'),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+      }
     } finally {
       if (mounted) {
         setState(() => _executingActionId = null);
@@ -470,8 +518,10 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
           target: '运营首页',
         );
       case XiaoyiLeadershipActionType.linkageHealth:
+        await _refreshWebLinkageStatus();
         return _buildLinkageHealthResult(action);
       case XiaoyiLeadershipActionType.dataLinkCheck:
+        await _refreshWebLinkageStatus();
         return _buildDataLinkResult(action);
       case XiaoyiLeadershipActionType.startXiaoyi:
         return _resultFor(
@@ -521,7 +571,40 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
           .read(strategyControllerProvider.notifier)
           .refreshCandidates(silent: true),
       _refreshAlertsSilently(),
+      () async {
+        await _refreshWebLinkageStatus();
+      }(),
     ]);
+  }
+
+  Future<XiaoyiWebLinkageStatus> _refreshWebLinkageStatus() async {
+    ref.invalidate(xiaoyiWebLinkageStatusProvider);
+    return ref.read(xiaoyiWebLinkageStatusProvider.future);
+  }
+
+  Future<_XiaoyiWebReceiptState> _requestWebReceipt(
+    XiaoyiLeadershipAction action,
+  ) async {
+    final webActionId = webActionIdFor(action.type);
+    if (webActionId == null) return const _XiaoyiWebReceiptState();
+    try {
+      final receipt = await ref
+          .read(xiaoyiWebLinkageRepositoryProvider)
+          .executeDryRun(
+            webActionId: webActionId,
+            instruction: action.command,
+            confirmed: action.requiresConfirmation,
+          );
+      return _XiaoyiWebReceiptState(
+        verified: receipt.actionReady,
+        message: receipt.summary,
+      );
+    } catch (error) {
+      return _XiaoyiWebReceiptState(
+        verified: false,
+        message: 'Web 网关未确认；移动端仍可本地导航：${xiaoyiWebLinkageErrorMessage(error)}',
+      );
+    }
   }
 
   Future<void> _runCoreLinkage(BuildContext context) async {
@@ -560,9 +643,12 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
       final auditOk = await _runCoreLinkageStage(
         index: 3,
         progress: 0.92,
-        detail: '本地审计缓存已读取 · 上传状态以事件标签为准',
+        detail: 'Web 后端、指令网关与 SHA-256 审计链已核验',
         task: () async {
-          ref.read(auditTimelineProvider);
+          final status = await _refreshWebLinkageStatus();
+          if (!status.webLinkageReady) {
+            throw StateError(status.summary);
+          }
         },
       );
       final allHealthy = situationOk && alertsOk && strategyOk && auditOk;
@@ -673,6 +759,9 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
     final alerts = ref.read(alertsSnapshotProvider);
     final strategy = ref.read(strategyControllerProvider);
     final audit = ref.read(auditTimelineProvider);
+    final web = ref
+        .read(xiaoyiWebLinkageStatusProvider)
+        .maybeWhen(data: (value) => value, orElse: () => null);
     final alertsStatus = alerts.when(
       data: (snapshot) => _alertConnectionLabel(snapshot.connectionStatus),
       loading: () => '连接中',
@@ -682,10 +771,13 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
     return _resultFor(
       action,
       detail:
-          '健康检查完成：移动端可用，告警链路 $alertsStatus，策略候选 ${strategy.candidates.length} 个，审计留痕 ${audit.items.length} 条。',
+          '健康检查完成：移动端可用，告警链路 $alertsStatus，策略候选 ${strategy.candidates.length} 个，审计留痕 ${audit.items.length} 条；${web?.summary ?? 'Web 共享链路尚未核验'}。',
       nextStep: '如需现场汇报，可继续执行“同步运营首页”或“生成会议简报”。',
       target: '联动健康',
-      tone: alerts.hasError || strategy.fetchErrorMessage != null
+      tone:
+          alerts.hasError ||
+              strategy.fetchErrorMessage != null ||
+              web?.webLinkageReady != true
           ? AppBadgeTone.watch
           : AppBadgeTone.success,
     );
@@ -695,6 +787,9 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
     final alerts = ref.read(alertsSnapshotProvider);
     final strategy = ref.read(strategyControllerProvider);
     final situation = ref.read(situationProvider);
+    final web = ref
+        .read(xiaoyiWebLinkageStatusProvider)
+        .maybeWhen(data: (value) => value, orElse: () => null);
     final situationStatus = situation.maybeWhen(
       data: (snapshot) =>
           '${snapshot.dataSource.label} · ${snapshot.systemScore}',
@@ -709,7 +804,7 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
     return _resultFor(
       action,
       detail:
-          '数据链路检查完成：态势 $situationStatus，告警 $alertsStatus，策略数据源 ${strategy.candidatesDataSource.label}。',
+          '数据链路检查完成：态势 $situationStatus，告警 $alertsStatus，策略数据源 ${strategy.candidatesDataSource.label}，Web 审计链 ${web?.auditChainValid == true ? '有效' : '未核验'}。',
       nextStep: '如发现数据源降级，可先同步运营首页，再进入对应页面核验。',
       target: '数据链路',
     );
@@ -759,6 +854,7 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
   }
 
   void _recordLeadershipAudit(
+    AuditTimelineNotifier auditNotifier,
     XiaoyiLeadershipAction action,
     _XiaoyiExecutionResult result,
   ) {
@@ -775,25 +871,46 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
       _ => AuditEventSource.aiSuggestion,
     };
 
-    ref
-        .read(auditTimelineProvider.notifier)
-        .recordEvent(
-          source: source,
-          actionType: AuditActionType.guidance,
-          stateSummary: '小懿领导联动执行：${action.label}',
-          policySetSummary: result.detail,
-          humanChoiceSummary: '领导点击执行：${action.command}',
-          payload: <String, Object?>{
-            'source': 'xiaoyi_mobile_leadership_panel',
-            'actionId': action.id,
-            'actionType': action.type.name,
-            'category': action.category.label,
-            'target': result.target,
-            'nextStep': result.nextStep,
-            'requiresConfirmation': action.requiresConfirmation,
-            'executivePreference': action.executivePreference,
-          },
-        );
+    auditNotifier.recordEvent(
+      source: source,
+      actionType: AuditActionType.guidance,
+      stateSummary: '小懿领导联动执行：${action.label}',
+      policySetSummary: result.detail,
+      humanChoiceSummary: '领导点击执行：${action.command}',
+      payload: <String, Object?>{
+        'source': 'xiaoyi_mobile_leadership_panel',
+        'actionId': action.id,
+        'actionType': action.type.name,
+        'category': action.category.label,
+        'target': result.target,
+        'nextStep': result.nextStep,
+        'requiresConfirmation': action.requiresConfirmation,
+        'executivePreference': action.executivePreference,
+        'webLinkageVerified': result.webLinkageVerified,
+        'webLinkageMessage': result.webLinkageMessage,
+      },
+    );
+  }
+
+  void _recordLeadershipFailure(
+    AuditTimelineNotifier auditNotifier,
+    XiaoyiLeadershipAction action,
+    String message,
+  ) {
+    auditNotifier.recordEvent(
+      source: AuditEventSource.executionFeedback,
+      actionType: AuditActionType.guidance,
+      stateSummary: '小懿联动未完成：${action.label}',
+      policySetSummary: 'Web 共享链路未返回完整回执',
+      humanChoiceSummary: '领导点击执行；系统已失效关闭',
+      payload: <String, Object?>{
+        'source': 'xiaoyi_mobile_leadership_panel',
+        'actionId': action.id,
+        'success': false,
+        'productionDispatch': false,
+        'error': message,
+      },
+    );
   }
 }
 
@@ -1508,6 +1625,58 @@ class _ExecutiveSignalStrip extends StatelessWidget {
   }
 }
 
+class _XiaoyiWebStatusStrip extends StatelessWidget {
+  const _XiaoyiWebStatusStrip({required this.status});
+
+  final AsyncValue<XiaoyiWebLinkageStatus> status;
+
+  @override
+  Widget build(BuildContext context) {
+    return status.when(
+      loading: () => const Row(
+        children: [
+          SizedBox.square(
+            dimension: 13,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: 7),
+          Text('正在核验 Web 共享后端与小懿指令网关'),
+        ],
+      ),
+      error: (error, stackTrace) => AppBadge(
+        label: 'Web 联动未核验 · ${xiaoyiWebLinkageErrorMessage(error)}',
+        tone: AppBadgeTone.watch,
+        leading: Icons.cloud_off_outlined,
+        compact: true,
+      ),
+      data: (value) => Wrap(
+        spacing: 7,
+        runSpacing: 7,
+        children: [
+          AppBadge(
+            label: value.webLinkageReady ? 'Web 共享链路已核验' : 'Web 共享链路异常',
+            tone: value.webLinkageReady
+                ? AppBadgeTone.success
+                : AppBadgeTone.critical,
+            leading: value.webLinkageReady
+                ? Icons.cloud_done_outlined
+                : Icons.cloud_off_outlined,
+            compact: true,
+          ),
+          AppBadge(
+            label: value.xiaoyiOnline ? '小懿真实服务在线' : value.xiaoyiLabel,
+            tone: value.xiaoyiOnline
+                ? AppBadgeTone.success
+                : AppBadgeTone.watch,
+            leading: Icons.smart_toy_outlined,
+            compact: true,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _XiaoyiAnswerCard extends StatelessWidget {
   const _XiaoyiAnswerCard({required this.state});
 
@@ -1601,6 +1770,8 @@ class _XiaoyiExecutionResult {
     required this.target,
     required this.tone,
     this.evidenceCount,
+    this.webLinkageVerified,
+    this.webLinkageMessage,
   });
 
   final String title;
@@ -1609,6 +1780,32 @@ class _XiaoyiExecutionResult {
   final String target;
   final AppBadgeTone tone;
   final int? evidenceCount;
+  final bool? webLinkageVerified;
+  final String? webLinkageMessage;
+
+  _XiaoyiExecutionResult copyWith({
+    AppBadgeTone? tone,
+    bool? webLinkageVerified,
+    String? webLinkageMessage,
+  }) {
+    return _XiaoyiExecutionResult(
+      title: title,
+      detail: detail,
+      nextStep: nextStep,
+      target: target,
+      tone: tone ?? this.tone,
+      evidenceCount: evidenceCount,
+      webLinkageVerified: webLinkageVerified ?? this.webLinkageVerified,
+      webLinkageMessage: webLinkageMessage ?? this.webLinkageMessage,
+    );
+  }
+}
+
+class _XiaoyiWebReceiptState {
+  const _XiaoyiWebReceiptState({this.verified, this.message});
+
+  final bool? verified;
+  final String? message;
 }
 
 class _XiaoyiExecutionResultCard extends StatelessWidget {
@@ -1671,6 +1868,49 @@ class _XiaoyiExecutionResultCard extends StatelessWidget {
               tone: AppBadgeTone.neutral,
               leading: Icons.fact_check_outlined,
               compact: true,
+            ),
+          ],
+          if (result.webLinkageMessage != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(
+                color:
+                    (result.webLinkageVerified == true
+                            ? const Color(0xFF76F7C5)
+                            : const Color(0xFFFFB45C))
+                        .withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(11),
+                border: Border.all(
+                  color:
+                      (result.webLinkageVerified == true
+                              ? const Color(0xFF76F7C5)
+                              : const Color(0xFFFFB45C))
+                          .withValues(alpha: 0.28),
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    result.webLinkageVerified == true
+                        ? Icons.cloud_done_outlined
+                        : Icons.cloud_off_outlined,
+                    size: 16,
+                    color: result.webLinkageVerified == true
+                        ? const Color(0xFF76F7C5)
+                        : const Color(0xFFFFB45C),
+                  ),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      result.webLinkageMessage!,
+                      style: theme.textTheme.bodySmall?.copyWith(height: 1.35),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ],

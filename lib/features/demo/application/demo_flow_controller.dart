@@ -212,6 +212,6 @@ class DemoFlowController extends Notifier<DemoFlowState> {
   void restart() => start();
 
   void reset() {
-    state = DemoFlowState.initial().copyWith(enabled: state.enabled);
+    state = DemoFlowState.initial();
   }
 }

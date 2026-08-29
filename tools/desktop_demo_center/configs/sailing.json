@@ -1,0 +1,17 @@
+{
+  "id": "sailing",
+  "name": "航行模拟器",
+  "subtitle": "Godot 三维航行 · 真实主场景与策略回放",
+  "displayURL": null,
+  "width": 620,
+  "height": 360,
+  "services": [],
+  "stopServiceIDs": ["sailing"],
+  "external": {
+    "id": "sailing",
+    "executable": "/Applications/Godot.app/Contents/MacOS/Godot",
+    "arguments": ["--path", "$HOME/Desktop/航行模拟器"],
+    "workDir": "~/Desktop/航行模拟器",
+    "processSignature": "Godot"
+  }
+}

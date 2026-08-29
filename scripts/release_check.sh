@@ -25,6 +25,7 @@ EOF
   exit 1
 fi
 export PORTAI_PYTHON="$python_bin"
+"$python_bin" scripts/public_privacy_scan.py
 
 for required_doc in \
   docs/SHARED_BACKEND_CONTRACT.md \

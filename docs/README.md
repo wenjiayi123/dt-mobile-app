@@ -8,4 +8,3 @@
 - [SECURITY.md](SECURITY.md)：凭证、执行适配器、审计与部署安全边界。
 - [TESTING.md](TESTING.md)：本地与 CI 验证命令。
 - [ACCESSIBILITY.md](ACCESSIBILITY.md)：移动端可访问性约束。
-- [DEMO_SCRIPT.md](DEMO_SCRIPT.md)：基于真实公开回放和测试产物的演示路径。

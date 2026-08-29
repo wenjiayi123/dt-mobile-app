@@ -705,6 +705,7 @@ String _buildAnchorHint(InAppNotificationItem item) {
 
 void _openTabAndClose(BuildContext context, WidgetRef ref, HomeTab tab) {
   ref.read(homeTabProvider.notifier).selectIndex(HomeTab.values.indexOf(tab));
+  ref.read(homeDashboardProvider.notifier).showBusinessTab();
   Navigator.of(context).pop();
 }
 

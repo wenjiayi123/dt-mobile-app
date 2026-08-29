@@ -1,4 +1,4 @@
-# Release Checklist / 发布清单
+# Maintainer Checklist / 维护清单
 
 - [ ] `pubspec.yaml`, changelog, citation metadata, tag, and release notes agree.
 - [ ] Flutter format, analysis, 17 tests, and release Web build pass on a clean checkout.

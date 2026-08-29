@@ -54,6 +54,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(container.read(homeTabProvider), HomeTab.audit);
+    expect(container.read(homeDashboardProvider), isFalse);
     expect(find.byType(NotificationPage), findsNothing);
   });
 }

@@ -1022,7 +1022,7 @@ class _TrainingProgressPanel extends StatelessWidget {
             Expanded(
               child: _ProgressMetric(
                 label: '奖励',
-                value: state.reward == 0
+                value: state.history.isEmpty
                     ? '待采样'
                     : state.reward.toStringAsFixed(2),
               ),
@@ -1042,22 +1042,25 @@ class _TrainingProgressPanel extends StatelessWidget {
               Expanded(
                 child: _ProgressMetric(
                   label: '测试平均收益',
-                  value: (state.evaluationMetrics['mean_reward'] ?? 0)
+                  value:
+                      (state.evaluationMetrics['reward'] ??
+                              state.evaluationMetrics['mean_reward'] ??
+                              0)
+                          .toStringAsFixed(3),
+                ),
+              ),
+              Expanded(
+                child: _ProgressMetric(
+                  label: '测试延误指数',
+                  value: (state.evaluationMetrics['delay_index_mean'] ?? 0)
                       .toStringAsFixed(3),
                 ),
               ),
               Expanded(
                 child: _ProgressMetric(
-                  label: '测试平均拥堵',
+                  label: '护栏违规率',
                   value:
-                      '${((state.evaluationMetrics['mean_congestion'] ?? 0) * 100).toStringAsFixed(1)}%',
-                ),
-              ),
-              Expanded(
-                child: _ProgressMetric(
-                  label: '测试冲突风险',
-                  value:
-                      '${((state.evaluationMetrics['mean_conflict_risk'] ?? 0) * 100).toStringAsFixed(1)}%',
+                      '${((state.evaluationMetrics['guardrail_violation_rate'] ?? 0) * 100).toStringAsFixed(1)}%',
                 ),
               ),
               Expanded(

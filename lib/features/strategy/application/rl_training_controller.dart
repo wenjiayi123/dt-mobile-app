@@ -305,6 +305,7 @@ class RlTrainingState {
   String get configSourceLabel => switch (configSource) {
     'xiaoyi_recommended' => '小懿推荐参数',
     'manual' => '人工配置参数',
+    'recovered_request' => '已恢复申请参数',
     _ => '系统默认参数',
   };
 
@@ -685,6 +686,9 @@ class RlTrainingController extends Notifier<RlTrainingState> {
             : '${algorithmItems.length}方法、$environmentVersion 与公开数据指纹已核验，等待提交',
         updatedAt: DateTime.now(),
       );
+      if (state.requestId == null) {
+        await _recoverLatestMobileRequest();
+      }
     } on DioException catch (error) {
       state = state.copyWith(
         phase: state.hasRequest ? previousPhase : RlDesktopTrainingPhase.failed,
@@ -701,6 +705,71 @@ class RlTrainingController extends Notifier<RlTrainingState> {
         errorMessage: error.message,
         updatedAt: DateTime.now(),
       );
+    }
+  }
+
+  Future<void> _recoverLatestMobileRequest() async {
+    final response = await _dio.get<Object>(
+      '/api/rl/train/requests',
+      queryParameters: const <String, Object>{'limit': 10},
+    );
+    final data = _asMap(response.data);
+    final items = data['items'] is List
+        ? (data['items'] as List).map(_asMap)
+        : const Iterable<Map<String, dynamic>>.empty();
+    final latest = items.firstWhere(
+      (item) =>
+          item['source']?.toString() == 'dt_mobile_app' &&
+          item['status']?.toString() != 'rejected',
+      orElse: () => <String, dynamic>{},
+    );
+    final requestId = latest['request_id']?.toString();
+    if (requestId == null || requestId.isEmpty) return;
+    final recoveredConfig = _asMap(latest['config']);
+    state = state.copyWith(
+      requestId: requestId,
+      jobId: latest['job_id']?.toString(),
+      config: recoveredConfig.isEmpty
+          ? state.config
+          : RlTrainingConfig(
+              algorithm:
+                  recoveredConfig['algorithm']?.toString() ??
+                  state.config.algorithm,
+              objective:
+                  recoveredConfig['objective']?.toString() ??
+                  state.config.objective,
+              scenario:
+                  recoveredConfig['scenario']?.toString() ??
+                  state.config.scenario,
+              assetGroup:
+                  recoveredConfig['asset_group']?.toString() ??
+                  state.config.assetGroup,
+              totalSteps: _toInt(recoveredConfig['total_steps']),
+              batchSize: _toInt(recoveredConfig['batch_size']),
+              learningRate: _toDouble(recoveredConfig['learning_rate']),
+              gamma: _toDouble(recoveredConfig['gamma']),
+              tau: _toDouble(recoveredConfig['tau']),
+              entropyCoef: _toDouble(recoveredConfig['entropy_coef']),
+              replayBuffer: _toInt(recoveredConfig['replay_buffer']),
+              seed: _toInt(recoveredConfig['seed']),
+              guardrail:
+                  recoveredConfig['guardrail']?.toString() ??
+                  state.config.guardrail,
+              demandCapKw: _toDouble(recoveredConfig['demand_cap_kw']),
+              costWeight: _toDouble(recoveredConfig['cost_weight']),
+              carbonWeight: _toDouble(recoveredConfig['carbon_weight']),
+              peakWeight: _toDouble(recoveredConfig['peak_weight']),
+              safetyWeight: _toDouble(recoveredConfig['safety_weight']),
+            ),
+      configSource: 'recovered_request',
+      logs: _prependLog('已从共享后端恢复最近一次移动端训练申请'),
+      updatedAt: DateTime.now(),
+    );
+    await refreshStatus();
+    if (state.phase == RlDesktopTrainingPhase.waitingDesktopApproval ||
+        state.phase == RlDesktopTrainingPhase.training ||
+        state.phase == RlDesktopTrainingPhase.evaluating) {
+      _startPolling();
     }
   }
 
@@ -789,13 +858,27 @@ class RlTrainingController extends Notifier<RlTrainingState> {
     }
     state = state.copyWith(
       phase: RlDesktopTrainingPhase.preparingRequest,
+      requestId: null,
+      jobId: null,
       stage: '封装数据指纹、训练参数与人工审批边界',
       progress: 0,
+      step: 0,
+      reward: 0,
+      entropy: 0,
+      policyVersion: '—',
+      eta: '—',
+      totalStepsReported: state.config.totalSteps,
+      renderReady: false,
+      history: const <RlMetricPoint>[],
+      evaluationMetrics: const <String, double>{},
+      replayFrames: const <Map<String, dynamic>>[],
+      approvedBy: null,
       logs: <String>[
         '已锁定数据集 ${state.datasetId} · ${_shortHash(state.datasetSha256)}',
         '已校验手机端无训练直启权限',
       ],
       errorMessage: null,
+      updatedAt: DateTime.now(),
     );
     try {
       final response = await _dio.post<Object>(
@@ -894,6 +977,11 @@ class RlTrainingController extends Notifier<RlTrainingState> {
         );
         if (embeddedStatus.isNotEmpty) {
           _applyTrainingStatus(embeddedStatus);
+          if (state.phase == RlDesktopTrainingPhase.training ||
+              state.phase == RlDesktopTrainingPhase.evaluating ||
+              state.phase == RlDesktopTrainingPhase.completed) {
+            await _refreshHistory(jobId);
+          }
         } else {
           await _refreshJobStatus(jobId);
         }
@@ -945,6 +1033,11 @@ class RlTrainingController extends Notifier<RlTrainingState> {
           ? _asMap(wrapper['status'])
           : wrapper,
     );
+    if (state.phase == RlDesktopTrainingPhase.training ||
+        state.phase == RlDesktopTrainingPhase.evaluating ||
+        state.phase == RlDesktopTrainingPhase.completed) {
+      await _refreshHistory(jobId);
+    }
     if (state.phase == RlDesktopTrainingPhase.completed &&
         state.replayFrames.isEmpty) {
       await _refreshReplay(jobId);
@@ -966,7 +1059,7 @@ class RlTrainingController extends Notifier<RlTrainingState> {
         ? ((totalSteps - step) / rate).ceil()
         : null;
     final phase = switch (statusName) {
-      'COMPLETED' => RlDesktopTrainingPhase.completed,
+      'COMPLETED' || 'EVALUATED' => RlDesktopTrainingPhase.completed,
       'EVALUATING' || 'TRAINED' => RlDesktopTrainingPhase.evaluating,
       'RUNNING' || 'STARTING' || 'PAUSED' => RlDesktopTrainingPhase.training,
       'FAILED' => RlDesktopTrainingPhase.failed,
@@ -1002,7 +1095,14 @@ class RlTrainingController extends Notifier<RlTrainingState> {
       progress: progress,
       stage: status['stage']?.toString() ?? state.stage,
       step: step,
-      reward: _toDouble(status['reward'] ?? metrics['reward']),
+      reward:
+          status.containsKey('reward') ||
+              metrics.containsKey('reward') ||
+              metrics.containsKey('reward_mean')
+          ? _toDouble(
+              status['reward'] ?? metrics['reward'] ?? metrics['reward_mean'],
+            )
+          : state.reward,
       entropy: _toDouble(status['entropy'] ?? metrics['entropy']),
       policyVersion: state.jobId ?? '—',
       eta: phase == RlDesktopTrainingPhase.completed
@@ -1014,7 +1114,9 @@ class RlTrainingController extends Notifier<RlTrainingState> {
       datasetSplit: status['dataset_split']?.toString() ?? state.datasetSplit,
       datasetSha256:
           status['dataset_sha256']?.toString() ?? state.datasetSha256,
-      renderReady: status['render_ready'] == true,
+      renderReady: status.containsKey('render_ready')
+          ? status['render_ready'] == true
+          : state.renderReady,
       history: history,
       evaluationMetrics: evaluationMetrics.isEmpty
           ? state.evaluationMetrics
@@ -1028,28 +1130,90 @@ class RlTrainingController extends Notifier<RlTrainingState> {
     }
   }
 
-  Future<void> _refreshReplay(String jobId) async {
+  Future<void> _refreshHistory(String jobId) async {
     try {
       final response = await _dio.get<Object>(
-        '/api/rl/artifacts/$jobId/replay',
+        '/api/rl/train/$jobId/history',
+        queryParameters: const <String, Object>{'limit': 200},
       );
       final data = _asMap(response.data);
-      final frames = data['frames'] is List
-          ? (data['frames'] as List).map(_asMap).toList(growable: false)
+      final records = data['records'] is List
+          ? (data['records'] as List).map(_asMap).toList(growable: false)
           : const <Map<String, dynamic>>[];
-      final aggregate = _asMap(data['aggregate_metrics']);
+      if (records.isEmpty) return;
       state = state.copyWith(
-        replayFrames: frames,
-        renderReady: frames.isNotEmpty,
-        evaluationMetrics: <String, double>{
-          for (final entry in aggregate.entries)
-            if (entry.value is num) entry.key: (entry.value as num).toDouble(),
-        },
-        logs: _prependLog('留出测试轨迹已读取 · ${frames.length} 帧'),
+        history: records
+            .map(
+              (item) => RlMetricPoint(
+                step: _toInt(item['step']),
+                reward: _toDouble(item['reward_mean'] ?? item['reward']),
+                episodes: _toInt(item['episodes']),
+              ),
+            )
+            .toList(growable: false),
+        reward: _toDouble(
+          records.last['reward_mean'] ?? records.last['reward'],
+        ),
+        logs: _prependLog('训练器历史已同步 · ${records.length} 个真实采样点'),
         updatedAt: DateTime.now(),
       );
     } on DioException catch (error) {
       state = state.copyWith(errorMessage: _friendlyDioError(error));
+    }
+  }
+
+  Future<void> _refreshReplay(String jobId) async {
+    state = state.copyWith(
+      phase: RlDesktopTrainingPhase.evaluating,
+      stage: '训练策略已冻结，正在读取独立留出测试产物',
+      errorMessage: null,
+      updatedAt: DateTime.now(),
+    );
+    try {
+      Response<Object> response;
+      var reusedArtifact = true;
+      try {
+        response = await _dio.get<Object>('/api/rl/train/$jobId/evaluation');
+      } on DioException catch (error) {
+        if (error.response?.statusCode != 404) rethrow;
+        reusedArtifact = false;
+        response = await _dio.post<Object>(
+          '/api/rl/train/$jobId/evaluate',
+          data: const <String, Object>{'episodes': 10},
+        );
+      }
+      final data = _asMap(response.data);
+      final render = _asMap(data['render']);
+      final frames = render['frames'] is List
+          ? (render['frames'] as List).map(_asMap).toList(growable: false)
+          : const <Map<String, dynamic>>[];
+      final metrics = _asMap(data['metrics']);
+      state = state.copyWith(
+        phase: RlDesktopTrainingPhase.completed,
+        progress: 100,
+        stage: '留出测试完成 · ${data['episodes'] ?? 0} 回合 / ${frames.length} 帧',
+        datasetSplit: data['split']?.toString() ?? state.datasetSplit,
+        datasetSha256:
+            data['dataset_sha256']?.toString() ?? state.datasetSha256,
+        replayFrames: frames,
+        renderReady: frames.isNotEmpty,
+        evaluationMetrics: <String, double>{
+          for (final entry in metrics.entries)
+            if (entry.value is num) entry.key: (entry.value as num).toDouble(),
+        },
+        logs: _prependLog(
+          '${reusedArtifact ? '已读取独立留出测试产物' : '独立留出测试完成'} · ${frames.length} 帧真实轨迹',
+        ),
+        errorMessage: null,
+        updatedAt: DateTime.now(),
+      );
+    } on DioException catch (error) {
+      state = state.copyWith(
+        phase: RlDesktopTrainingPhase.failed,
+        stage: '训练已完成，但留出测试未完成',
+        errorMessage: _friendlyDioError(error),
+        updatedAt: DateTime.now(),
+      );
     }
   }
 

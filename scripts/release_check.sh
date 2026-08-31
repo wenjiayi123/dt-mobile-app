@@ -138,7 +138,8 @@ if git ls-files | rg '(^|/)(\.env$|\.dart_tool/|build/|\.idea/|\.venv/|artifacts
   exit 1
 fi
 
-if git grep -n -E '/Users/|/var/folders/|BEGIN (RSA|OPENSSH|EC) PRIVATE|github_pat_|ghp_[A-Za-z0-9]+' -- ':!pubspec.lock' ':!scripts/release_check.sh'; then
+if git grep -n -E '/Users/|/var/folders/|BEGIN (RSA|OPENSSH|EC) PRIVATE|github_pat_|ghp_[A-Za-z0-9]+' -- \
+  ':!pubspec.lock' ':!scripts/release_check.sh' ':!scripts/public_privacy_scan.py'; then
   echo "project check failed: workstation path or credential marker found" >&2
   exit 1
 fi

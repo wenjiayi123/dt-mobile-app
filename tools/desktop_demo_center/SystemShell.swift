@@ -7,6 +7,9 @@ struct ServiceConfig: Codable {
     let name: String
     let workDir: String
     let command: String
+    let executable: String?
+    let arguments: [String]?
+    let environment: [String: String]?
     let processSignature: String
     let healthURL: String
     let healthContains: String?
@@ -57,6 +60,11 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
     private var allowWindowClose = false
     private var stopInProgress = false
     private var externalMonitor: Timer?
+    private var serviceMonitor: Timer?
+    private var serviceMonitorBusy = false
+    private var serviceFailureCounts: [String: Int] = [:]
+    private var lastProbeErrorCodes: [String: Int] = [:]
+    private var recoveringServiceIDs: Set<String> = []
 
     private lazy var runtimeRoot: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -92,6 +100,11 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        externalMonitor?.invalidate()
+        serviceMonitor?.invalidate()
     }
 
     private func loadConfig() throws -> SystemConfig {
@@ -219,6 +232,12 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
     }
 
     private func startServices() {
+        serviceMonitor?.invalidate()
+        serviceMonitor = nil
+        serviceMonitorBusy = false
+        serviceFailureCounts.removeAll()
+        lastProbeErrorCodes.removeAll()
+        recoveringServiceIDs.removeAll()
         webView?.removeFromSuperview()
         webView = nil
         retryButton.isHidden = true
@@ -273,12 +292,15 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
         }
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData, timeoutInterval: 2.0)
         request.setValue("PortDemoDesktop/1.0", forHTTPHeaderField: "User-Agent")
-        URLSession.shared.dataTask(with: request) { data, response, _ in
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             let http = response as? HTTPURLResponse
             let statusOK = http.map { (200..<300).contains($0.statusCode) } ?? false
             let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
             let identityOK = service.healthContains.map { body.contains($0) } ?? true
-            DispatchQueue.main.async { completion(statusOK && identityOK) }
+            DispatchQueue.main.async {
+                self?.lastProbeErrorCodes[service.id] = (error as NSError?)?.code
+                completion(statusOK && identityOK)
+            }
         }.resume()
     }
 
@@ -297,6 +319,107 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
         }
     }
 
+    private func startServiceMonitoring() {
+        guard config.external == nil, !config.services.isEmpty else { return }
+        serviceMonitor?.invalidate()
+        serviceFailureCounts.removeAll()
+        serviceMonitor = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { [weak self] _ in
+            self?.monitorConfiguredServices()
+        }
+    }
+
+    private func monitorConfiguredServices() {
+        guard !stopInProgress, !serviceMonitorBusy else { return }
+        serviceMonitorBusy = true
+        monitorService(at: 0) { [weak self] in
+            self?.serviceMonitorBusy = false
+        }
+    }
+
+    private func monitorService(at index: Int, completion: @escaping () -> Void) {
+        guard !stopInProgress, index < config.services.count else {
+            completion()
+            return
+        }
+        let service = config.services[index]
+        probe(service) { [weak self] healthy in
+            guard let self else { return }
+            if healthy {
+                self.serviceFailureCounts[service.id] = 0
+                self.monitorService(at: index + 1, completion: completion)
+                return
+            }
+
+            let failures = (self.serviceFailureCounts[service.id] ?? 0) + 1
+            self.serviceFailureCounts[service.id] = failures
+            guard failures >= 3 else {
+                self.monitorService(at: index + 1, completion: completion)
+                return
+            }
+
+            self.recoverStoppedService(service) {
+                self.monitorService(at: index + 1, completion: completion)
+            }
+        }
+    }
+
+    private func recoverStoppedService(_ service: ServiceConfig, completion: @escaping () -> Void) {
+        guard !stopInProgress, !recoveringServiceIDs.contains(service.id) else {
+            completion()
+            return
+        }
+
+        recoveringServiceIDs.insert(service.id)
+        let launchAndPoll = { [weak self] in
+            guard let self else { return }
+            do {
+                try self.launch(service)
+            } catch {
+                self.recoveringServiceIDs.remove(service.id)
+                completion()
+                return
+            }
+
+            self.poll(service, deadline: Date().addingTimeInterval(service.startupTimeout)) { [weak self] recovered in
+                guard let self else { return }
+                self.recoveringServiceIDs.remove(service.id)
+                if recovered {
+                    self.serviceFailureCounts[service.id] = 0
+                    if let view = self.webView {
+                        // Do not supersede a user-initiated route change. WebKit
+                        // reports the displaced request as NSURLErrorCancelled
+                        // (-999); the active navigation will read the recovered
+                        // service on its own.
+                        if !view.isLoading {
+                            view.reloadFromOrigin()
+                        }
+                    } else {
+                        self.statusLabel.textColor = .white
+                        self.showSystemUI()
+                    }
+                }
+                completion()
+            }
+        }
+
+        guard hasLiveRecordedProcess(id: service.id) else {
+            launchAndPoll()
+            return
+        }
+
+        // A timeout can be a long-running backend request, so it must not kill
+        // a managed process. A repeated -1004 means the port actively refused
+        // the connection: the signed PID is no longer serving and can be
+        // replaced after an exact identity check.
+        guard lastProbeErrorCodes[service.id] == NSURLErrorCannotConnectToHost,
+              terminateRecordedService(id: service.id) else {
+            recoveringServiceIDs.remove(service.id)
+            completion()
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: launchAndPoll)
+    }
+
     private func launch(_ service: ServiceConfig) throws {
         let logURL = runtimeRoot.appendingPathComponent("logs/\(service.id).log")
         lastLogURL = logURL
@@ -307,9 +430,24 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
         try logHandle.seekToEnd()
 
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = ["-lc", "exec \(service.command)"]
-        process.currentDirectoryURL = URL(fileURLWithPath: expandedPath(service.workDir), isDirectory: true)
+        let workDirectory = URL(fileURLWithPath: expandedPath(service.workDir), isDirectory: true)
+        process.currentDirectoryURL = workDirectory
+        if let configuredExecutable = service.executable, !configuredExecutable.isEmpty {
+            let expandedExecutable = expandedArgument(configuredExecutable)
+            process.executableURL = expandedExecutable.hasPrefix("/")
+                ? URL(fileURLWithPath: expandedExecutable)
+                : workDirectory.appendingPathComponent(expandedExecutable)
+            process.arguments = (service.arguments ?? []).map(expandedArgument)
+            var environment = ProcessInfo.processInfo.environment
+            service.environment?.forEach { key, value in environment[key] = expandedArgument(value) }
+            process.environment = environment
+        } else {
+            process.executableURL = URL(fileURLWithPath: "/bin/bash")
+            // Legacy configurations still use a shell command. New services
+            // should use executable/arguments/environment so no shell startup
+            // or quoting step can stall before the real process is launched.
+            process.arguments = ["-c", "exec \(service.command)"]
+        }
         process.standardOutput = logHandle
         process.standardError = logHandle
         try process.run()
@@ -376,21 +514,29 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
         contentRoot.addSubview(view)
         webView = view
         view.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15))
+        startServiceMonitoring()
         window.title = config.name
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        showWebLoadError(error)
+        handleWebLoadError(webView, error: error)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        showWebLoadError(error)
+        handleWebLoadError(webView, error: error)
     }
 
-    private func showWebLoadError(_ error: Error) {
-        webView?.removeFromSuperview()
+    private func handleWebLoadError(_ failedWebView: WKWebView, error: Error) {
+        guard failedWebView === webView else { return }
+        let nsError = error as NSError
+        // WebKit uses -999 when a request is intentionally replaced by a new
+        // navigation (for example V3 -> homepage). It is not a page failure.
+        if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
+            return
+        }
+        failedWebView.removeFromSuperview()
         webView = nil
         showFatalError("界面加载失败", detail: error.localizedDescription)
     }
@@ -446,6 +592,8 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
         stopInProgress = true
+        serviceMonitor?.invalidate()
+        serviceMonitor = nil
         stopButton.isEnabled = false
         stopButton.title = "正在停止…"
         webView?.isHidden = true
@@ -584,6 +732,15 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
             try? FileManager.default.removeItem(at: pidURL(id: id))
             return false
         }
+        return true
+    }
+
+    private func terminateRecordedService(id: String) -> Bool {
+        guard let record = readPID(id: id), record.pid > 1 else { return false }
+        let command = processCommand(pid: record.pid).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !command.isEmpty, command.contains(record.signature) else { return false }
+        guard Darwin.kill(record.pid, SIGKILL) == 0 else { return false }
+        try? FileManager.default.removeItem(at: pidURL(id: id))
         return true
     }
 

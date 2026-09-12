@@ -2,7 +2,7 @@
   "id": "port",
   "name": "港口数字孪生 V3.2",
   "subtitle": "12 方法决策中枢 · 可审计强化学习与小懿真实联动",
-  "displayURL": "http://127.0.0.1:8000/v3",
+  "displayURL": "http://127.0.0.1:8000/#home-hero",
   "width": 1450,
   "height": 900,
   "services": [

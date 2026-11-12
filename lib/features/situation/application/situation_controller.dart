@@ -165,6 +165,7 @@ class SituationController extends AsyncNotifier<SituationSnapshot> {
 
   bool _failNextFetchOnce = false;
   bool _disposed = false;
+  Future<SituationSnapshot>? _pendingFetch;
 
   @override
   Future<SituationSnapshot> build() async {
@@ -179,7 +180,7 @@ class SituationController extends AsyncNotifier<SituationSnapshot> {
     }
 
     final live = await _fetchRemoteSnapshot();
-    await _writeCache(live);
+    unawaited(_writeCache(live));
     return live;
   }
 
@@ -197,7 +198,7 @@ class SituationController extends AsyncNotifier<SituationSnapshot> {
 
     try {
       final live = await _fetchRemoteSnapshot();
-      await _writeCache(live);
+      unawaited(_writeCache(live));
 
       if (_disposed) return;
       state = AsyncData(live);
@@ -222,7 +223,7 @@ class SituationController extends AsyncNotifier<SituationSnapshot> {
   }) async {
     try {
       final live = await _fetchRemoteSnapshot();
-      await _writeCache(live);
+      unawaited(_writeCache(live));
 
       if (_disposed) return;
       state = AsyncData(live);
@@ -256,7 +257,13 @@ class SituationController extends AsyncNotifier<SituationSnapshot> {
     }
   }
 
-  Future<SituationSnapshot> _fetchRemoteSnapshot() async {
+  Future<SituationSnapshot> _fetchRemoteSnapshot() {
+    return _pendingFetch ??= _requestRemoteSnapshot().whenComplete(() {
+      _pendingFetch = null;
+    });
+  }
+
+  Future<SituationSnapshot> _requestRemoteSnapshot() async {
     if (_failNextFetchOnce) {
       _failNextFetchOnce = false;
       throw Exception('test-injected fetch failure');

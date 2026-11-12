@@ -28,7 +28,7 @@
 - 87,459个六分钟时步、262,347条独立公共原始观测、69,967/17,492时序划分；
 - 18组多种子正式RL训练证据与1组MPC控制基线证据。
 
-移动端小懿还会调用 `/api/rl/integration/health`、
+移动端舷鸥还会调用 `/api/rl/integration/health`、
 `/api/assistant/actions/execute` 与 `/api/mobile/audit/verify`，只有身份、路由、
 dry-run 回执和审计链同时通过时才显示“Web 共享链路已核验”。
 

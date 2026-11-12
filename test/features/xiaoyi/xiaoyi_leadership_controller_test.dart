@@ -45,7 +45,7 @@ void main() {
           xiaoyiLeadershipControllerProvider.notifier,
         );
 
-        final judged = controller.judge(command: '小懿，验证这个策略能不能上线');
+        final judged = controller.judge(command: '小鸥，验证这个策略能不能上线');
         expect(judged?.id, 'verify_policy_for_online');
         expect(judged?.requiresConfirmation, isTrue);
 
@@ -80,7 +80,7 @@ void main() {
         xiaoyiLeadershipControllerProvider.notifier,
       );
 
-      final action = controller.execute(command: '小懿，切到低碳优先');
+      final action = controller.execute(command: '小鸥，切到低碳优先');
       expect(action?.id, 'set_low_carbon_priority');
 
       final state = container.read(xiaoyiLeadershipControllerProvider);

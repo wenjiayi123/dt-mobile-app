@@ -69,7 +69,7 @@ if ! rg -q "assets/images/xiaoyi_maritime_officer.png" pubspec.yaml ||
    ! rg -q "supportedSharedAlgorithmIds" lib/features/strategy ||
    ! rg -q "sharedObservationDimensions = 37" lib/features/strategy ||
    ! rg -q "sharedActionDimensions = 5" lib/features/strategy; then
-  echo "project check failed: shared Web/mobile RL or Xiaoyi contract is not wired" >&2
+  echo "project check failed: shared Web/mobile RL or GullMate contract is not wired" >&2
   exit 1
 fi
 "$python_bin" - <<'PY'

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -5,6 +7,25 @@ import 'package:dt_mobile_app/features/demo/application/demo_flow_controller.dar
 
 void main() {
   group('DemoFlowController', () {
+    test('handoff waits for a matching return receipt before completion', () async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final controller = container.read(demoFlowProvider.notifier);
+      await controller.restorationComplete;
+      controller.restart();
+      controller.jumpToStep(portAiDemoSteps.indexWhere((s) => s.id == 'handoff'));
+      controller.registerAction('open-strategy', () {});
+      controller.registerAction('rl-open-handoff', controller.markExternalNavigationPending);
+      await controller.triggerAction('rl-open-handoff');
+      expect(container.read(demoFlowProvider).completedStepIds, isNot(contains('handoff')));
+      expect(container.read(demoFlowProvider).stepStatus, DemoStepStatus.idle);
+      controller.acceptExternalReceipt(traceId: 'unrelated');
+      expect(container.read(demoFlowProvider).completedStepIds, isNot(contains('handoff')));
+      controller.acceptExternalReceipt(traceId: container.read(demoFlowProvider).traceId);
+      expect(container.read(demoFlowProvider).completedStepIds, contains('handoff'));
+      expect(container.read(demoFlowProvider).stepStatus, DemoStepStatus.resultReady);
+    });
+
     test(
       'keeps UI tour phases deterministic without changing business data',
       () {
@@ -82,5 +103,28 @@ void main() {
       expect(state.stage, DemoFlowStage.ready);
       expect(state.logs, isEmpty);
     });
+
+    test(
+      'route-opening actions complete when the native page is opened',
+      () async {
+        final container = ProviderContainer();
+        addTearDown(container.dispose);
+
+        final controller = container.read(demoFlowProvider.notifier);
+        controller.restart();
+        controller.jumpToStep(portAiDemoSteps.length - 1);
+        final routeClosed = Completer<void>();
+        controller.registerAction('open-settings', () => routeClosed.future);
+
+        await controller.triggerAction('open-settings');
+
+        expect(routeClosed.isCompleted, isFalse);
+        expect(
+          container.read(demoFlowProvider).stepStatus,
+          DemoStepStatus.resultReady,
+          reason: '打开路由即为可见结果，不应等到关闭页面。',
+        );
+      },
+    );
   });
 }

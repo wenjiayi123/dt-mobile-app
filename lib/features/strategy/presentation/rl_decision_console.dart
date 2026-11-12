@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:dt_mobile_app/features/demo/application/demo_flow_controller.dart';
 import 'package:dt_mobile_app/features/strategy/application/rl_training_controller.dart';
 import 'package:dt_mobile_app/features/strategy/application/strategy_controller.dart';
 import 'package:dt_mobile_app/features/strategy/domain/shared_rl_contract.dart';
@@ -30,11 +31,81 @@ class _RlDecisionConsoleState extends ConsumerState<RlDecisionConsole> {
   Timer? _playbackTimer;
   int _frameIndex = 0;
   bool _playing = false;
+  late final DemoAction _showCurvesAction;
+  late final DemoAction _showAlgorithmsAction;
+  late final DemoAction _playReplayAction;
+  late final DemoFlowController _demoController;
+
+  @override
+  void initState() {
+    super.initState();
+    _demoController = ref.read(demoFlowProvider.notifier);
+    _showCurvesAction = () => _selectEvidenceAndReveal(_EvidenceView.training);
+    _showAlgorithmsAction = () =>
+        _selectEvidenceAndReveal(_EvidenceView.baselines);
+    _playReplayAction = _runReplayFromGuide;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _demoController.registerAction('rl-show-curves', _showCurvesAction);
+      _demoController.registerAction(
+        'rl-show-algorithms',
+        _showAlgorithmsAction,
+      );
+      _demoController.registerAction('rl-play-replay', _playReplayAction);
+    });
+  }
 
   @override
   void dispose() {
+    _demoController.unregisterAction('rl-show-curves', _showCurvesAction);
+    _demoController.unregisterAction(
+      'rl-show-algorithms',
+      _showAlgorithmsAction,
+    );
+    _demoController.unregisterAction('rl-play-replay', _playReplayAction);
     _playbackTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _selectEvidence(_EvidenceView view) async {
+    if (mounted && _view != view) setState(() => _view = view);
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+  }
+
+  Future<void> _selectEvidenceAndReveal(_EvidenceView view) async {
+    await _selectEvidence(view);
+    if (!mounted) return;
+    await Scrollable.ensureVisible(
+      context,
+      alignment: 0.06,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  Future<void> _runReplayFromGuide() async {
+    await _selectEvidenceAndReveal(_EvidenceView.evaluation);
+    if (!mounted) return;
+    await ref.read(rlTrainingProvider.notifier).ensureHistoricalReplay();
+    if (!mounted) return;
+    await _primaryAction(ref.read(rlTrainingProvider));
+  }
+
+  void _onEvidenceSelected(_EvidenceView view) {
+    final actionId = switch (view) {
+      _EvidenceView.training => 'rl-show-curves',
+      _EvidenceView.baselines => 'rl-show-algorithms',
+      _ => null,
+    };
+    if (actionId == null) {
+      setState(() => _view = view);
+      return;
+    }
+    unawaited(
+      ref
+          .read(demoFlowProvider.notifier)
+          .triggerAction(actionId, origin: DemoActionOrigin.page),
+    );
   }
 
   Future<void> _primaryAction(RlTrainingState training) async {
@@ -133,7 +204,7 @@ class _RlDecisionConsoleState extends ConsumerState<RlDecisionConsole> {
           _EvidenceSwitch(
             selected: _view,
             isTrainable: training.config.isTrainable,
-            onSelected: (value) => setState(() => _view = value),
+            onSelected: _onEvidenceSelected,
           ),
           const SizedBox(height: 12),
           AnimatedSwitcher(
@@ -168,8 +239,15 @@ class _RlDecisionConsoleState extends ConsumerState<RlDecisionConsole> {
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
-              onPressed: training.hasRequest
-                  ? () => _primaryAction(training)
+              onPressed: training.hasRequest || training.jobId != null
+                  ? () => unawaited(
+                      ref
+                          .read(demoFlowProvider.notifier)
+                          .triggerAction(
+                            'rl-play-replay',
+                            origin: DemoActionOrigin.page,
+                          ),
+                    )
                   : null,
               icon: Icon(
                 _playing
@@ -185,7 +263,7 @@ class _RlDecisionConsoleState extends ConsumerState<RlDecisionConsole> {
               ),
             ),
           ),
-          if (!training.hasRequest) ...[
+          if (!training.hasRequest && training.jobId == null) ...[
             const SizedBox(height: 7),
             Text(
               training.config.isTrainable
@@ -273,15 +351,27 @@ class _TrainingEvidence extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final points = state.history;
+    final violation = state.evaluationMetrics['guardrail_violation_rate'];
+    final success =
+        state.evaluationMetrics['success_rate'] ??
+        (violation == null ? null : (1 - violation).clamp(0, 1).toDouble());
+    final actorOrPolicy =
+        state.evaluationMetrics['actor_loss'] ??
+        state.evaluationMetrics['policy_gradient_loss'];
+    final criticOrValue =
+        state.evaluationMetrics['critic_loss'] ??
+        state.evaluationMetrics['value_loss'];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _BoundaryBanner(
           icon: Icons.visibility_off_outlined,
-          title: state.datasetSplit == 'train' ? '训练集 · 渲染关闭' : '等待真实训练数据',
+          title: points.isNotEmpty
+              ? (state.hasRequest ? '训练集 · 渲染关闭' : '历史真实训练快照')
+              : '等待真实训练数据',
           detail: points.isEmpty
               ? '训练器尚未回传 episode / reward 采样点。'
-              : '${points.length} 个训练器采样点 · 当前真实步数 ${state.step} · render_mode=None',
+              : '${points.length} 个训练器采样点 · Job ${state.jobId ?? '—'} · 当前真实步数 ${state.step} · render_mode=None',
           color: const Color(0xFF4DE4FF),
         ),
         const SizedBox(height: 10),
@@ -325,6 +415,43 @@ class _TrainingEvidence extends StatelessWidget {
             ),
             Expanded(
               child: _Metric(label: '剩余', value: state.eta),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _Metric(
+                label: 'Actor / Policy Loss',
+                value: actorOrPolicy == null
+                    ? '—'
+                    : actorOrPolicy.toStringAsFixed(4),
+              ),
+            ),
+            Expanded(
+              child: _Metric(
+                label: 'Critic / Value Loss',
+                value: criticOrValue == null
+                    ? '—'
+                    : criticOrValue.toStringAsFixed(4),
+              ),
+            ),
+            Expanded(
+              child: _Metric(
+                label: '成功率',
+                value: success == null
+                    ? '—'
+                    : '${(success * 100).toStringAsFixed(1)}%',
+              ),
+            ),
+            Expanded(
+              child: _Metric(
+                label: '违规率',
+                value: violation == null
+                    ? '—'
+                    : '${(violation * 100).toStringAsFixed(2)}%',
+              ),
             ),
           ],
         ),
@@ -447,7 +574,81 @@ class _BaselineEvidence extends StatelessWidget {
         item.id.contains(':') ? item.id.split(':').first : '',
     };
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (training.benchmarkExperiments.isNotEmpty) ...[
+          const _BoundaryBanner(
+            icon: Icons.history_rounded,
+            title: '历史多算法正式实验',
+            detail: '指标来自同一公开数据集、多种子和固定留出协议；是离线反事实证据，非码头现场收益。',
+            color: Color(0xFF8EBBFF),
+          ),
+          const SizedBox(height: 9),
+          _HistoricalExperimentComparison(
+            experiments: training.benchmarkExperiments,
+          ),
+          const SizedBox(height: 10),
+        ],
+        if (strategies.candidates.isNotEmpty) ...[
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '基线 / 单目标 / 综合策略业务对比',
+              style: TextStyle(
+                color: Color(0xFFB8EFFF),
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(height: 7),
+          for (final candidate in strategies.candidates.take(4))
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 7),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF081A2F),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF294264)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    candidate.title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Reward Δ ${candidate.rewardDelta.displayText} · '
+                    '拥堵 ${candidate.congestionIndex.displayText} · '
+                    '安全余量 ${candidate.safetyMargin.displayText}',
+                    style: const TextStyle(
+                      color: Color(0xFF9DC8F8),
+                      fontSize: 9,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    candidate.summary,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF7894BD),
+                      fontSize: 9,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 4),
+        ],
         for (final algorithm in training.algorithms)
           Container(
             margin: const EdgeInsets.only(bottom: 7),
@@ -519,6 +720,113 @@ class _BaselineEvidence extends StatelessWidget {
       ],
     );
   }
+}
+
+class _HistoricalExperimentComparison extends StatelessWidget {
+  const _HistoricalExperimentComparison({required this.experiments});
+  final List<RlBenchmarkExperiment> experiments;
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = experiments.take(6).toList(growable: false);
+    return Column(
+      children: [
+        for (final experiment in visible)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 7),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF071327),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF294264)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${experiment.label} · ${experiment.formalRuns}次正式留出实验',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      'seeds ${experiment.seeds.join('/')}',
+                      style: const TextStyle(
+                        color: Color(0xFF76F7C5),
+                        fontSize: 8,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 9,
+                  runSpacing: 5,
+                  children: [
+                    _ExperimentMetric(
+                      label: 'Reward',
+                      value: experiment.reward.toStringAsFixed(2),
+                    ),
+                    _ExperimentMetric(
+                      label: '延误',
+                      value: experiment.delayIndex.toStringAsFixed(2),
+                    ),
+                    _ExperimentMetric(
+                      label: '成本',
+                      value: experiment.energyCost.toStringAsFixed(1),
+                    ),
+                    _ExperimentMetric(
+                      label: '碳排',
+                      value: experiment.carbonKg.toStringAsFixed(1),
+                    ),
+                    _ExperimentMetric(
+                      label: '峰值',
+                      value: experiment.peakKw.toStringAsFixed(1),
+                    ),
+                    _ExperimentMetric(
+                      label: '违规',
+                      value:
+                          '${(experiment.guardrailViolationRate * 100).toStringAsFixed(2)}%',
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _ExperimentMetric extends StatelessWidget {
+  const _ExperimentMetric({required this.label, required this.value});
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+    decoration: BoxDecoration(
+      color: const Color(0xFF102A4A),
+      borderRadius: BorderRadius.circular(99),
+    ),
+    child: Text(
+      '$label $value',
+      style: const TextStyle(
+        color: Color(0xFFD2E5FF),
+        fontSize: 8,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+  );
 }
 
 class _DataEvidence extends StatelessWidget {

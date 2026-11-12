@@ -24,7 +24,7 @@ void main() {
             'xiaoyi_ai': <String, dynamic>{
               'online': false,
               'chat_capable': false,
-              'label': '小懿未在线 · 后端证据兜底',
+              'label': '舷鸥未在线 · 后端证据兜底',
             },
           },
         },
@@ -95,7 +95,7 @@ void main() {
     expect(receipt.summary, contains('action_ready=false'));
   });
 
-  test('maps mobile Xiaoyi actions to the registered Web action gateway', () {
+  test('maps mobile GullMate actions to the registered Web action gateway', () {
     expect(
       webActionIdFor(XiaoyiLeadershipActionType.runPolicyTest),
       'run_policy_test',

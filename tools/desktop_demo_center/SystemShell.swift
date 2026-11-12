@@ -53,6 +53,7 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
     private var progress: NSProgressIndicator!
     private var retryButton: NSButton!
     private var logsButton: NSButton!
+    private var exitOnlyButton: NSButton!
     private var webView: WKWebView?
     private var ownedProcesses: [Process] = []
     private var lastLogURL: URL?
@@ -65,11 +66,32 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
     private var serviceFailureCounts: [String: Int] = [:]
     private var lastProbeErrorCodes: [String: Int] = [:]
     private var recoveringServiceIDs: Set<String> = []
+    private var mobileWindowFrame: NSRect?
+    private var webPresentationActive = false
+    private var startupGeneration = 0
+    private var terminationReplyPending = false
+    private let processQueue = DispatchQueue(label: "PortDemo.SystemShell.ProcessLifecycle", qos: .userInitiated)
 
     private lazy var runtimeRoot: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         return base.appendingPathComponent("港航演示中心/Runtime", isDirectory: true)
     }()
+
+    private lazy var processRuntime = ManagedProcessRuntime(runtimeRoot: runtimeRoot)
+
+    private func managedService(_ service: ServiceConfig) -> ManagedService {
+        ManagedService(id: service.id, workDir: expandedPath(service.workDir),
+                       processSignature: service.processSignature, healthURL: service.healthURL)
+    }
+
+    private var configuredProcesses: [ManagedService] {
+        guard let config else { return [] }
+        if let external = config.external {
+            return [ManagedService(id: external.id, workDir: expandedPath(external.workDir),
+                                   processSignature: external.processSignature, healthURL: nil)]
+        }
+        return config.services.map(managedService)
+    }
 
     private func expandedPath(_ value: String) -> String {
         (value as NSString).expandingTildeInPath
@@ -86,6 +108,10 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
         do {
             config = try loadConfig()
             try prepareRuntimeDirectories()
+            guard processRuntime.acquireLease(ownerID: config.id, serviceIDs: configuredProcesses.map(\.id)) else {
+                throw NSError(domain: "DemoShell", code: 2,
+                              userInfo: [NSLocalizedDescriptionKey: "无法登记服务使用记录，请检查启动日志目录权限。"])
+            }
             buildWindow()
             NSApp.activate(ignoringOtherApps: true)
             if let external = config.external {
@@ -102,9 +128,17 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
         true
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard config != nil, !allowWindowClose else { return .terminateNow }
+        terminationReplyPending = true
+        if !stopInProgress { beginStopAndExit() }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         externalMonitor?.invalidate()
         serviceMonitor?.invalidate()
+        if let config { processRuntime.releaseLease(ownerID: config.id) }
     }
 
     private func loadConfig() throws -> SystemConfig {
@@ -138,6 +172,7 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
         window.delegate = self
         window.minSize = NSSize(width: min(config.width, 430), height: min(config.height, 560))
         window.center()
+        if config.id == "mobile" { mobileWindowFrame = window.frame }
 
         stopButton = NSButton(title: "■  停止并退出系统", target: self, action: #selector(confirmStopAndExit))
         stopButton.bezelStyle = .rounded
@@ -203,7 +238,13 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
         logsButton.isHidden = true
         logsButton.translatesAutoresizingMaskIntoConstraints = false
 
-        [badge, title, subtitle, progress, statusLabel, detailLabel, retryButton, logsButton].forEach(contentRoot.addSubview)
+        exitOnlyButton = NSButton(title: "仅退出界面", target: self, action: #selector(exitShellOnly))
+        exitOnlyButton.bezelStyle = .rounded
+        exitOnlyButton.toolTip = "关闭当前窗口，但保留无法安全确认身份的后台进程"
+        exitOnlyButton.isHidden = true
+        exitOnlyButton.translatesAutoresizingMaskIntoConstraints = false
+
+        [badge, title, subtitle, progress, statusLabel, detailLabel, retryButton, logsButton, exitOnlyButton].forEach(contentRoot.addSubview)
 
         NSLayoutConstraint.activate([
             badge.centerXAnchor.constraint(equalTo: contentRoot.centerXAnchor),
@@ -225,13 +266,18 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
             retryButton.widthAnchor.constraint(equalToConstant: 120),
             logsButton.centerXAnchor.constraint(equalTo: contentRoot.centerXAnchor, constant: 70),
             logsButton.topAnchor.constraint(equalTo: detailLabel.bottomAnchor, constant: 24),
-            logsButton.widthAnchor.constraint(equalToConstant: 120)
+            logsButton.widthAnchor.constraint(equalToConstant: 120),
+            exitOnlyButton.centerXAnchor.constraint(equalTo: contentRoot.centerXAnchor),
+            exitOnlyButton.topAnchor.constraint(equalTo: retryButton.bottomAnchor, constant: 10),
+            exitOnlyButton.widthAnchor.constraint(equalToConstant: 120)
         ])
 
         window.makeKeyAndOrderFront(nil)
     }
 
     private func startServices() {
+        guard !stopInProgress else { return }
+        startupGeneration += 1
         serviceMonitor?.invalidate()
         serviceMonitor = nil
         serviceMonitorBusy = false
@@ -242,12 +288,15 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
         webView = nil
         retryButton.isHidden = true
         logsButton.isHidden = true
+        exitOnlyButton.isHidden = true
         progress.isHidden = false
         progress.startAnimation(nil)
         ensureService(at: 0)
     }
 
     private func ensureService(at index: Int) {
+        guard !stopInProgress else { return }
+        let generation = startupGeneration
         guard index < config.services.count else {
             showSystemUI()
             return
@@ -257,8 +306,12 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
         detailLabel.stringValue = "检查真实服务与端口契约…"
 
         probe(service) { [weak self] healthy in
-            guard let self else { return }
+            guard let self, !self.stopInProgress, generation == self.startupGeneration else { return }
             if healthy {
+                guard self.processRuntime.adopt(self.managedService(service)) else {
+                    self.showStartupFailure(service, detail: "服务已响应，但无法核验或登记后台进程，请查看启动日志。")
+                    return
+                }
                 self.ensureService(at: index + 1)
                 return
             }
@@ -286,6 +339,7 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
     }
 
     private func probe(_ service: ServiceConfig, completion: @escaping (Bool) -> Void) {
+        let generation = startupGeneration
         guard let url = URL(string: service.healthURL) else {
             completion(false)
             return
@@ -298,21 +352,25 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
             let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
             let identityOK = service.healthContains.map { body.contains($0) } ?? true
             DispatchQueue.main.async {
-                self?.lastProbeErrorCodes[service.id] = (error as NSError?)?.code
+                guard let self, !self.stopInProgress, generation == self.startupGeneration else { return }
+                self.lastProbeErrorCodes[service.id] = (error as NSError?)?.code
                 completion(statusOK && identityOK)
             }
         }.resume()
     }
 
     private func poll(_ service: ServiceConfig, deadline: Date, completion: @escaping (Bool) -> Void) {
+        guard !stopInProgress else { return }
+        let generation = startupGeneration
         probe(service) { [weak self] healthy in
-            guard let self else { return }
+            guard let self, !self.stopInProgress, generation == self.startupGeneration else { return }
             if healthy {
-                completion(true)
+                completion(self.processRuntime.adopt(self.managedService(service)))
             } else if Date() >= deadline {
                 completion(false)
             } else {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) {
+                    guard !self.stopInProgress, generation == self.startupGeneration else { return }
                     self.poll(service, deadline: deadline, completion: completion)
                 }
             }
@@ -320,7 +378,7 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
     }
 
     private func startServiceMonitoring() {
-        guard config.external == nil, !config.services.isEmpty else { return }
+        guard !stopInProgress, config.external == nil, !config.services.isEmpty else { return }
         serviceMonitor?.invalidate()
         serviceFailureCounts.removeAll()
         serviceMonitor = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { [weak self] _ in
@@ -342,8 +400,9 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
             return
         }
         let service = config.services[index]
+        let generation = startupGeneration
         probe(service) { [weak self] healthy in
-            guard let self else { return }
+            guard let self, !self.stopInProgress, generation == self.startupGeneration else { return }
             if healthy {
                 self.serviceFailureCounts[service.id] = 0
                 self.monitorService(at: index + 1, completion: completion)
@@ -370,8 +429,9 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
         }
 
         recoveringServiceIDs.insert(service.id)
+        let generation = startupGeneration
         let launchAndPoll = { [weak self] in
-            guard let self else { return }
+            guard let self, !self.stopInProgress, generation == self.startupGeneration else { return }
             do {
                 try self.launch(service)
             } catch {
@@ -411,16 +471,36 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
         // a managed process. A repeated -1004 means the port actively refused
         // the connection: the signed PID is no longer serving and can be
         // replaced after an exact identity check.
-        guard lastProbeErrorCodes[service.id] == NSURLErrorCannotConnectToHost,
-              terminateRecordedService(id: service.id) else {
+        guard lastProbeErrorCodes[service.id] == NSURLErrorCannotConnectToHost else {
             recoveringServiceIDs.remove(service.id)
             completion()
             return
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: launchAndPoll)
+        let managed = managedService(service)
+        let ownerID = config.id
+        processQueue.async { [weak self] in
+            guard let self else { return }
+            let canRecover = DispatchQueue.main.sync {
+                !self.stopInProgress && generation == self.startupGeneration
+            }
+            guard canRecover else { return }
+            let protected = self.processRuntime.leasedServiceIDs(excludingOwnerID: ownerID)
+            let result = self.processRuntime.stop([managed], protectedServiceIDs: protected)
+            DispatchQueue.main.async {
+                guard !self.stopInProgress, generation == self.startupGeneration else { return }
+                if result.remaining == 0 && result.protectedServiceIDs.isEmpty { launchAndPoll() }
+                else {
+                    self.recoveringServiceIDs.remove(service.id)
+                    completion()
+                }
+            }
+        }
     }
 
     private func launch(_ service: ServiceConfig) throws {
+        guard !stopInProgress else {
+            throw NSError(domain: "DemoShell", code: NSUserCancelledError)
+        }
         let logURL = runtimeRoot.appendingPathComponent("logs/\(service.id).log")
         lastLogURL = logURL
         if !FileManager.default.fileExists(atPath: logURL.path) {
@@ -456,6 +536,7 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
     }
 
     private func launchExternal(_ external: ExternalConfig) {
+        guard !stopInProgress else { return }
         statusLabel.stringValue = "正在启动 \(config.name)"
         detailLabel.stringValue = "加载 Godot 主场景与真实项目资源…"
 
@@ -495,6 +576,7 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
     }
 
     private func showSystemUI() {
+        guard !stopInProgress else { return }
         guard let rawURL = config.displayURL, let url = URL(string: rawURL) else {
             showFatalError("显示地址无效", detail: config.displayURL ?? "未配置")
             return
@@ -524,8 +606,58 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
         handleWebLoadError(webView, error: error)
     }
 
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        applyPresentationMode(for: webView.url)
+    }
+
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         handleWebLoadError(webView, error: error)
+    }
+
+    private func applyPresentationMode(for url: URL?) {
+        guard config.id == "mobile", let url else { return }
+        let isDesktopWeb = url.port == 8000
+        guard isDesktopWeb != webPresentationActive else { return }
+
+        if isDesktopWeb {
+            mobileWindowFrame = window.frame
+            let visible = (window.screen ?? NSScreen.main)?.visibleFrame ?? window.frame
+            let width = min(1450, max(980, visible.width - 36))
+            let height = min(900, max(680, visible.height - 36))
+            let target = NSRect(
+                x: visible.midX - width / 2,
+                y: visible.midY - height / 2,
+                width: width,
+                height: height
+            )
+            window.minSize = NSSize(width: min(980, width), height: min(680, height))
+            window.title = "PortAI × Web RL 审批"
+            applyStableWebFrame(target)
+        } else {
+            let fallback = NSRect(x: window.frame.midX - config.width / 2,
+                                  y: window.frame.midY - config.height / 2,
+                                  width: config.width, height: config.height)
+            window.minSize = NSSize(width: min(config.width, 430), height: min(config.height, 560))
+            window.title = config.name
+            applyStableWebFrame(mobileWindowFrame ?? fallback)
+        }
+        webPresentationActive = isDesktopWeb
+    }
+
+    private func applyStableWebFrame(_ frame: NSRect) {
+        // Animated NSWindow resizing can expose partially repainted CanvasKit
+        // tiles in WKWebView. Switch dimensions atomically, then force the web
+        // surface to observe its final bounds before the next frame is drawn.
+        window.setFrame(frame, display: true, animate: false)
+        contentRoot.layoutSubtreeIfNeeded()
+        guard let webView else { return }
+        webView.frame = contentRoot.bounds
+        webView.needsDisplay = true
+        webView.layer?.setNeedsDisplay()
+        webView.evaluateJavaScript(
+            "window.dispatchEvent(new Event('resize')); requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));",
+            completionHandler: nil
+        )
     }
 
     private func handleWebLoadError(_ failedWebView: WKWebView, error: Error) {
@@ -562,12 +694,30 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
         detailLabel.stringValue = detail
         retryButton.isHidden = false
         logsButton.isHidden = lastLogURL == nil
+        exitOnlyButton.isHidden = false
     }
 
     @objc private func retryStartup() {
         statusLabel.textColor = .white
+        exitOnlyButton.isHidden = true
         if let external = config.external { launchExternal(external) }
         else { startServices() }
+    }
+
+    @objc private func exitShellOnly() {
+        startupGeneration += 1
+        serviceMonitor?.invalidate()
+        serviceMonitor = nil
+        externalMonitor?.invalidate()
+        externalMonitor = nil
+        processRuntime.releaseLease(ownerID: config.id)
+        allowWindowClose = true
+        if terminationReplyPending {
+            terminationReplyPending = false
+            NSApp.reply(toApplicationShouldTerminate: true)
+        } else {
+            NSApp.terminate(nil)
+        }
     }
 
     @objc private func openLogs() {
@@ -585,41 +735,68 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
         guard !stopInProgress else { return }
         let alert = NSAlert()
         alert.messageText = "停止并退出 \(config.name)？"
-        alert.informativeText = "将核验 PID 与进程签名，停止该系统真实后台进程；不是只关闭表面窗口。"
+        alert.informativeText = "关闭当前界面，并停止不再被其他已打开系统使用的后台服务。"
         alert.alertStyle = .warning
         alert.addButton(withTitle: "停止并退出")
         alert.addButton(withTitle: "取消")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
+        beginStopAndExit()
+    }
 
+    private func beginStopAndExit() {
+        guard !stopInProgress else { return }
         stopInProgress = true
+        startupGeneration += 1
         serviceMonitor?.invalidate()
         serviceMonitor = nil
-        stopButton.isEnabled = false
-        stopButton.title = "正在停止…"
+        externalMonitor?.invalidate()
+        externalMonitor = nil
+        processRuntime.releaseLease(ownerID: config.id)
+        stopButton?.isEnabled = false
+        stopButton?.title = "正在停止…"
         webView?.isHidden = true
-        progress.isHidden = false
-        progress.startAnimation(nil)
-        statusLabel.stringValue = "正在停止真实后台进程"
-        statusLabel.textColor = .white
-        detailLabel.stringValue = "正在核验进程树与退出回执…"
+        progress?.isHidden = false
+        progress?.startAnimation(nil)
+        statusLabel?.stringValue = "正在停止后台服务"
+        statusLabel?.textColor = .white
+        detailLabel?.stringValue = "正在核验进程与端口是否释放…"
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        let services = configuredProcesses
+        processQueue.async { [weak self] in
             guard let self else { return }
-            let result = self.stopConfiguredProcesses()
+            let protected = self.processRuntime.leasedServiceIDs()
+            let result = self.processRuntime.stop(services, protectedServiceIDs: protected)
             DispatchQueue.main.async {
-                self.progress.stopAnimation(nil)
-                self.statusLabel.stringValue = result.remaining == 0 ? "系统已完全停止" : "仍有进程未退出"
-                self.detailLabel.stringValue = result.remaining == 0
-                    ? "已停止 \(result.stopped) 个核验进程，端口与资源已经释放。"
-                    : "已停止 \(result.stopped) 个进程，仍有 \(result.remaining) 个进程未确认退出，请查看日志。"
+                self.progress?.stopAnimation(nil)
+                self.statusLabel?.stringValue = result.remaining == 0 ? "当前系统已退出" : "仍有后台服务未退出"
                 if result.remaining == 0 {
+                    self.detailLabel?.stringValue = result.protectedServiceIDs.isEmpty
+                        ? "后台进程已退出，端口已释放。"
+                        : "当前界面已退出；其他已打开系统仍在使用的共享后台已保留。"
                     self.allowWindowClose = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) { NSApp.terminate(nil) }
+                    if self.terminationReplyPending {
+                        self.terminationReplyPending = false
+                        NSApp.reply(toApplicationShouldTerminate: true)
+                    } else {
+                        NSApp.terminate(nil)
+                    }
                 } else {
+                    self.detailLabel?.stringValue = "仍有 \(result.remaining) 项未停止。\(result.errors.joined(separator: "；")) 可再次核验停止，或仅退出界面并保留该进程。"
                     self.stopInProgress = false
-                    self.stopButton.isEnabled = true
-                    self.stopButton.title = "■  再次停止并退出"
-                    self.webView?.isHidden = false
+                    self.serviceMonitorBusy = false
+                    self.recoveringServiceIDs.removeAll()
+                    self.serviceFailureCounts.removeAll()
+                    self.lastProbeErrorCodes.removeAll()
+                    _ = self.processRuntime.acquireLease(ownerID: self.config.id, serviceIDs: services.map(\.id))
+                    self.stopButton?.isEnabled = true
+                    self.stopButton?.title = "■  再次停止并退出"
+                    self.retryButton?.isHidden = false
+                    self.logsButton?.isHidden = self.lastLogURL == nil
+                    self.exitOnlyButton?.isHidden = false
+                    if self.terminationReplyPending {
+                        self.terminationReplyPending = false
+                        NSApp.reply(toApplicationShouldTerminate: false)
+                    }
                 }
             }
         }
@@ -637,77 +814,6 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
                 return
             }
         }
-    }
-
-    private func stopConfiguredProcesses() -> (stopped: Int, remaining: Int) {
-        let ids: [String]
-        if let configured = config.stopServiceIDs, !configured.isEmpty {
-            ids = configured
-        } else if let external = config.external {
-            ids = [external.id]
-        } else {
-            ids = config.services.map(\.id)
-        }
-
-        var snapshots: [Int32: String] = [:]
-        var recordFiles: [URL] = []
-        for id in ids {
-            guard let record = readPID(id: id), isRecordAlive(record) else {
-                try? FileManager.default.removeItem(at: pidURL(id: id))
-                continue
-            }
-            recordFiles.append(pidURL(id: id))
-            for pid in [record.pid] + descendantPIDs(of: record.pid) {
-                let command = processCommand(pid: pid).trimmingCharacters(in: .whitespacesAndNewlines)
-                if !command.isEmpty { snapshots[pid] = command }
-            }
-        }
-
-        for pid in snapshots.keys.sorted() { _ = Darwin.kill(pid, SIGTERM) }
-        Thread.sleep(forTimeInterval: 1.2)
-
-        for (pid, expectedCommand) in snapshots {
-            guard Darwin.kill(pid, 0) == 0 else { continue }
-            let currentCommand = processCommand(pid: pid).trimmingCharacters(in: .whitespacesAndNewlines)
-            if currentCommand == expectedCommand { _ = Darwin.kill(pid, SIGKILL) }
-        }
-        Thread.sleep(forTimeInterval: 0.2)
-
-        var remaining = 0
-        for (pid, expectedCommand) in snapshots {
-            guard Darwin.kill(pid, 0) == 0 else { continue }
-            if processCommand(pid: pid).trimmingCharacters(in: .whitespacesAndNewlines) == expectedCommand {
-                remaining += 1
-            }
-        }
-        if remaining == 0 { recordFiles.forEach { try? FileManager.default.removeItem(at: $0) } }
-        return (max(0, snapshots.count - remaining), remaining)
-    }
-
-    private func descendantPIDs(of rootPID: Int32) -> [Int32] {
-        let process = Process()
-        let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/bin/ps")
-        process.arguments = ["-axo", "pid=,ppid="]
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        guard (try? process.run()) != nil else { return [] }
-        process.waitUntilExit()
-        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        var children: [Int32: [Int32]] = [:]
-        for line in output.split(separator: "\n") {
-            let fields = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
-            guard fields.count >= 2, let pid = Int32(fields[0]), let ppid = Int32(fields[1]) else { continue }
-            children[ppid, default: []].append(pid)
-        }
-        var result: [Int32] = []
-        var queue = children[rootPID] ?? []
-        while !queue.isEmpty {
-            let pid = queue.removeFirst()
-            result.append(pid)
-            queue.append(contentsOf: children[pid] ?? [])
-        }
-        return result
     }
 
     private func pidURL(id: String) -> URL {
@@ -728,19 +834,13 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
     }
 
     private func hasLiveRecordedProcess(id: String) -> Bool {
+        if let service = config.services.first(where: { $0.id == id }) {
+            return processRuntime.isRunning(managedService(service))
+        }
         guard let record = readPID(id: id), isRecordAlive(record) else {
             try? FileManager.default.removeItem(at: pidURL(id: id))
             return false
         }
-        return true
-    }
-
-    private func terminateRecordedService(id: String) -> Bool {
-        guard let record = readPID(id: id), record.pid > 1 else { return false }
-        let command = processCommand(pid: record.pid).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !command.isEmpty, command.contains(record.signature) else { return false }
-        guard Darwin.kill(record.pid, SIGKILL) == 0 else { return false }
-        try? FileManager.default.removeItem(at: pidURL(id: id))
         return true
     }
 
@@ -758,15 +858,21 @@ final class SystemShellDelegate: NSObject, NSApplicationDelegate, WKNavigationDe
         process.standardError = Pipe()
         do {
             try process.run()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
-            return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            return String(data: data, encoding: .utf8) ?? ""
         } catch {
             return ""
         }
     }
 }
 
-let application = NSApplication.shared
-let applicationDelegate = SystemShellDelegate()
-application.delegate = applicationDelegate
-application.run()
+@main
+struct SystemShellApplication {
+    static func main() {
+        let application = NSApplication.shared
+        let applicationDelegate = SystemShellDelegate()
+        application.delegate = applicationDelegate
+        withExtendedLifetime(applicationDelegate) { application.run() }
+    }
+}

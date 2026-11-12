@@ -36,7 +36,16 @@ class _AuditPageState extends ConsumerState<AuditPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          if (demoFlow.isRunning) ...[
+          if (demoFlow.isOpen &&
+              demoFlow.currentStep.actionId == 'open-audit') ...[
+            _DemoAuditReceiptHero(
+              traceId: demoFlow.traceId,
+              totalCount: timeline.count,
+              latestStrategyEvent: latestStrategyEvent,
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (demoFlow.legacyStageCardsEnabled && demoFlow.isRunning) ...[
             _AuditDemoClosureCard(
               flow: demoFlow,
               totalCount: timeline.count,
@@ -136,6 +145,109 @@ class _AuditPageState extends ConsumerState<AuditPage> {
       },
     );
   }
+}
+
+class _DemoAuditReceiptHero extends StatelessWidget {
+  const _DemoAuditReceiptHero({
+    required this.traceId,
+    required this.totalCount,
+    required this.latestStrategyEvent,
+  });
+
+  final String traceId;
+  final int totalCount;
+  final AuditEvent? latestStrategyEvent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF0B4944), Color(0xFF123E66), Color(0xFF332765)],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFF76F7C5), width: 1.4),
+        boxShadow: const [
+          BoxShadow(color: Color(0x3376F7C5), blurRadius: 28, spreadRadius: -5),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.verified_user_rounded, color: Color(0xFF76F7C5)),
+              SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  '标准化结果凭证已落入审计链',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 7,
+            runSpacing: 7,
+            children: [
+              _AuditHeroPill(label: '留痕 $totalCount 条'),
+              _AuditHeroPill(
+                label: latestStrategyEvent == null ? '等待策略回执' : '策略回执已关联',
+              ),
+              const _AuditHeroPill(label: '生产权限关闭'),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Trace ID  ${traceId.isEmpty ? '尚未生成' : traceId}',
+            style: const TextStyle(
+              color: Color(0xFFBDFBE1),
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            '任务目标、数据集版本、算法参数、验证结论与人工确认状态均可继续向下追溯。',
+            style: TextStyle(
+              color: Color(0xFFE4EEFC),
+              fontSize: 10,
+              height: 1.45,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AuditHeroPill extends StatelessWidget {
+  const _AuditHeroPill({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+    decoration: BoxDecoration(
+      color: const Color(0x1F76F7C5),
+      borderRadius: BorderRadius.circular(99),
+      border: Border.all(color: const Color(0x6676F7C5)),
+    ),
+    child: Text(
+      label,
+      style: const TextStyle(
+        color: Color(0xFFBDFBE1),
+        fontSize: 9,
+        fontWeight: FontWeight.w800,
+      ),
+    ),
+  );
 }
 
 class _AuditDemoClosureCard extends StatelessWidget {

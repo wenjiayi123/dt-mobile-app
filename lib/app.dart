@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import 'package:dt_mobile_app/features/auth/presentation/auth_page.dart';
+import 'package:dt_mobile_app/features/demo/presentation/demo_guide_overlay.dart';
 import 'package:dt_mobile_app/features/notifications/presentation/notification_page.dart';
+import 'package:dt_mobile_app/features/home/presentation/primary_navigation.dart';
 import 'package:dt_mobile_app/features/settings/presentation/settings_page.dart';
 import 'package:dt_mobile_app/shared/ui/port_twin_backdrop.dart';
 
@@ -10,16 +12,31 @@ const String routeAuth = '/auth';
 const String routeSettings = '/settings';
 const String routeNotifications = '/notifications';
 
-class DtMobileApp extends StatelessWidget {
-  const DtMobileApp({super.key, required this.home});
+class DtMobileApp extends StatefulWidget {
+  const DtMobileApp({
+    super.key,
+    required this.home,
+    this.showDemoGuide = false,
+    this.showPrimaryNavigation = false,
+  });
 
   final Widget home;
+  final bool showDemoGuide;
+  final bool showPrimaryNavigation;
+
+  @override
+  State<DtMobileApp> createState() => _DtMobileAppState();
+}
+
+class _DtMobileAppState extends State<DtMobileApp> {
+  final _navigatorKey = GlobalKey<NavigatorState>();
 
   @override
   Widget build(BuildContext context) {
     final theme = _buildTheme();
 
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       title: 'PortAI DT Mobile',
       debugShowCheckedModeBanner: false,
       theme: theme,
@@ -33,11 +50,51 @@ class DtMobileApp extends StatelessWidget {
           ),
           child: TooltipTheme(
             data: theme.tooltipTheme,
-            child: Stack(
-              children: [
-                const Positioned.fill(child: PortTwinBackdrop()),
-                Positioned.fill(child: child ?? const SizedBox.shrink()),
-              ],
+            child: Overlay.wrap(
+              child: Stack(
+                children: [
+                  const Positioned.fill(child: PortTwinBackdrop()),
+                  Positioned.fill(
+                    child: Column(
+                      children: [
+                        Expanded(
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              final content = widget.showDemoGuide
+                                  ? DemoGuideLayout(
+                                      child: child ?? const SizedBox.shrink(),
+                                    )
+                                  : child ?? const SizedBox.shrink();
+                              return MediaQuery(
+                                data: mediaQuery.copyWith(
+                                  size: Size(
+                                    constraints.maxWidth,
+                                    constraints.maxHeight,
+                                  ),
+                                  padding: widget.showPrimaryNavigation
+                                      ? mediaQuery.padding.copyWith(bottom: 0)
+                                      : mediaQuery.padding,
+                                  viewPadding: widget.showPrimaryNavigation
+                                      ? mediaQuery.viewPadding.copyWith(
+                                          bottom: 0,
+                                        )
+                                      : mediaQuery.viewPadding,
+                                ),
+                                child: content,
+                              );
+                            },
+                          ),
+                        ),
+                        if (widget.showPrimaryNavigation)
+                          PrimaryNavigation(
+                            onNavigate: () => _navigatorKey.currentState
+                                ?.popUntil((route) => route.isFirst),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -47,7 +104,7 @@ class DtMobileApp extends StatelessWidget {
         switch (settings.name) {
           case routeHome:
             return MaterialPageRoute<void>(
-              builder: (_) => home,
+              builder: (_) => widget.home,
               settings: settings,
             );
           case routeAuth:

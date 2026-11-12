@@ -27,12 +27,12 @@ Flutter 默认连接 Web 工程 `port-dt-multi` 的 FastAPI 服务：
 | `GET /api/rl/strategies` | 读取已登记且完成留出测试的模型 |
 | `POST /api/rl/simulate` | 后端执行独立留出集评测并返回轨迹；不生产下发 |
 
-小懿与 Web 的跨端联动使用以下真实后端回执：
+舷鸥与 Web 的跨端联动使用以下真实后端回执：
 
 | 方法与路径 | 移动端用途 |
 |---|---|
-| `GET /api/rl/integration/health` | 核验 Web、RL、小懿服务和指令网关路由 |
-| `POST /api/assistant/actions/execute` | 将移动端小懿动作映射为 Web 注册动作；固定 `dry_run=true` |
+| `GET /api/rl/integration/health` | 核验 Web、RL、舷鸥服务和指令网关路由 |
+| `POST /api/assistant/actions/execute` | 将移动端舷鸥动作映射为 Web 注册动作；固定 `dry_run=true` |
 | `GET /api/mobile/audit/verify` | 在联动完成前复核共享 SHA-256 审计链 |
 
 共享核心兼容合同为 SAC、PPO、TD3、DQN、A2C、TQC 与 MPC。当前 V3.2

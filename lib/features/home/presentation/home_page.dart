@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:dt_mobile_app/app.dart';
+import 'package:dt_mobile_app/core/platform/same_window_navigation.dart';
 import 'package:dt_mobile_app/features/alerts/application/alerts_controller.dart';
 import 'package:dt_mobile_app/features/alerts/presentation/alerts_page.dart';
 import 'package:dt_mobile_app/features/audit/application/audit_controller.dart';
@@ -16,11 +18,15 @@ import 'package:dt_mobile_app/features/situation/presentation/situation_page.dar
 import 'package:dt_mobile_app/features/strategy/application/strategy_controller.dart';
 import 'package:dt_mobile_app/features/strategy/presentation/strategy_page.dart';
 import 'package:dt_mobile_app/features/xiaoyi/presentation/xiaoyi_leadership_panel.dart';
+import 'package:dt_mobile_app/features/xiaoyi/application/xiaoyi_leadership_controller.dart';
 
 import '../application/home_tab_notifier.dart';
+import 'demo_port_data_card.dart';
 
 class HomeShellPage extends ConsumerStatefulWidget {
-  const HomeShellPage({super.key});
+  const HomeShellPage({super.key, this.showBottomNavigation = true});
+
+  final bool showBottomNavigation;
 
   @override
   ConsumerState<HomeShellPage> createState() => _HomeShellPageState();
@@ -32,6 +38,8 @@ class _HomeShellPageState extends ConsumerState<HomeShellPage> {
 
   Offset? _xiaoyiLauncherOffset;
   late final ValueNotifier<_SharedFocusState> _sharedFocusNotifier;
+  late final Map<String, DemoAction> _demoShellActions;
+  late final DemoFlowController _demoController;
 
   @override
   void initState() {
@@ -39,10 +47,30 @@ class _HomeShellPageState extends ConsumerState<HomeShellPage> {
     _sharedFocusNotifier = ValueNotifier<_SharedFocusState>(
       const _SharedFocusState.empty(),
     );
+    _demoController = ref.read(demoFlowProvider.notifier);
+    _demoShellActions = <String, DemoAction>{
+      'open-dashboard': _openXiaoyiHome,
+      'open-situation': () => _openTab(HomeTab.situation),
+      'open-strategy': () => _openTab(HomeTab.strategy),
+      'open-alerts': () => _openTab(HomeTab.alerts),
+      'open-audit': () => _openTab(HomeTab.audit),
+      'open-notifications': _openNotifications,
+      'open-settings': _openSettings,
+    };
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      for (final entry in _demoShellActions.entries) {
+        _demoController.registerAction(entry.key, entry.value);
+      }
+      unawaited(_consumeCrossSystemReceipt());
+    });
   }
 
   @override
   void dispose() {
+    for (final entry in _demoShellActions.entries) {
+      _demoController.unregisterAction(entry.key, entry.value);
+    }
     _sharedFocusNotifier.dispose();
     super.dispose();
   }
@@ -52,13 +80,77 @@ class _HomeShellPageState extends ConsumerState<HomeShellPage> {
     _sharedFocusNotifier.value = next;
   }
 
-  void _openTab(HomeTab tab) {
+  Future<void> _openTab(HomeTab tab) async {
+    _returnToHomeRoute();
     ref.read(homeDashboardProvider.notifier).showBusinessTab();
     ref.read(homeTabProvider.notifier).selectIndex(HomeTab.values.indexOf(tab));
+    await WidgetsBinding.instance.endOfFrame;
   }
 
-  void _openXiaoyiHome() {
+  Future<void> _openXiaoyiHome() async {
+    _returnToHomeRoute();
     ref.read(homeDashboardProvider.notifier).showDashboard();
+    await WidgetsBinding.instance.endOfFrame;
+  }
+
+  void _openNotifications() {
+    _returnToHomeRoute();
+    unawaited(
+      Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => const NotificationPage())),
+    );
+  }
+
+  void _openSettings() {
+    _returnToHomeRoute();
+    unawaited(Navigator.of(context).pushNamed(routeSettings));
+  }
+
+  void _returnToHomeRoute() {
+    // The root guide remains above pushed settings, notifications and 3D pages.
+    // Match the bottom navigation's behavior before changing the shell's tab.
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
+  void _triggerPageAction(String actionId) {
+    ref
+        .read(demoFlowProvider.notifier)
+        .triggerAction(actionId, origin: DemoActionOrigin.page);
+  }
+
+  Future<void> _consumeCrossSystemReceipt() async {
+    // Receipt handling must not invalidate the controller's pending restore
+    // and persist the default first step over the actual handoff checkpoint.
+    await _demoController.restorationComplete;
+    if (!mounted) return;
+    final fields = readCrossSystemReturnReceipt();
+    if (fields.isEmpty) return;
+    ref.read(xiaoyiCrossSystemReceiptProvider.notifier).accept(fields);
+    ref.read(homeDashboardProvider.notifier).showDashboard();
+    _demoController.acceptExternalReceipt(traceId: fields['trace_id'] ?? '');
+    ref
+        .read(auditTimelineProvider.notifier)
+        .recordEvent(
+          source: AuditEventSource.executionFeedback,
+          actionType: AuditActionType.guidance,
+          stateSummary: '跨系统任务结果已返回 PortAI',
+          policySetSummary:
+              '${fields['target_system'] ?? '未知系统'} · ${fields['execution_status'] ?? '未知状态'} · ${fields['key_metrics'] ?? '无指标'}',
+          humanChoiceSummary: '用户在目标系统完成查看/确认并点击返回舷鸥',
+          payload: <String, Object?>{
+            ...fields,
+            'source': 'portai_cross_system_return',
+            'productionAuthority': fields['production_authority'] == 'true',
+          },
+        );
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        const SnackBar(content: Text('已返回 PortAI：舷鸥已回收结果凭证并写入审计链')),
+      );
+    await _demoController.saveProgress();
+    if (mounted) clearCrossSystemReturnReceipt();
   }
 
   Offset _defaultXiaoyiOffset(BoxConstraints constraints) {
@@ -105,7 +197,11 @@ class _HomeShellPageState extends ConsumerState<HomeShellPage> {
     final tab = ref.watch(homeTabProvider);
     final unreadAlertsAsync = ref.watch(unreadAlertsCountProvider);
     final unreadNotifications = ref.watch(unreadNotificationsCountProvider);
-    final demoFlow = ref.watch(demoFlowProvider);
+    final demoLayout = ref.watch(
+      demoFlowProvider.select(
+        (state) => (isRunning: state.isRunning, stage: state.stage),
+      ),
+    );
     final showDashboard = ref.watch(homeDashboardProvider);
     final theme = Theme.of(context);
 
@@ -138,15 +234,12 @@ class _HomeShellPageState extends ConsumerState<HomeShellPage> {
               ],
             ),
           )
-        : IndexedStack(
-            index: HomeTab.values.indexOf(tab),
-            children: const [
-              SituationPage(),
-              StrategyPage(),
-              AlertsPage(),
-              AuditPage(),
-            ],
-          );
+        : switch (tab) {
+            HomeTab.situation => const SituationPage(),
+            HomeTab.strategy => const StrategyPage(),
+            HomeTab.alerts => const AlertsPage(),
+            HomeTab.audit => const AuditPage(),
+          };
 
     return Scaffold(
       appBar: AppBar(
@@ -165,7 +258,8 @@ class _HomeShellPageState extends ConsumerState<HomeShellPage> {
             child: _SharedFocusBanner(
               notifier: _sharedFocusNotifier,
               onOpenTab: _openTab,
-              demoFlow: demoFlow,
+              demoIsRunning: demoLayout.isRunning,
+              demoStage: demoLayout.stage,
             ),
           ),
         ),
@@ -174,19 +268,12 @@ class _HomeShellPageState extends ConsumerState<HomeShellPage> {
           const SizedBox(width: 6),
           _NotificationBellButton(
             badgeText: notificationsBadgeText,
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const NotificationPage(),
-                ),
-              );
-            },
+            onTap: () => _triggerPageAction('open-notifications'),
           ),
           const SizedBox(width: 2),
           _TopMenu(
             onOpenAuth: () => Navigator.of(context).pushNamed(routeAuth),
-            onOpenSettings: () =>
-                Navigator.of(context).pushNamed(routeSettings),
+            onOpenSettings: () => _triggerPageAction('open-settings'),
           ),
           const SizedBox(width: 8),
         ],
@@ -218,31 +305,40 @@ class _HomeShellPageState extends ConsumerState<HomeShellPage> {
           );
         },
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: selectedNavIndex,
-        onDestinationSelected: (index) {
-          if (index == 0) {
-            ref.read(homeDashboardProvider.notifier).showDashboard();
-            return;
-          }
-          _openTab(HomeTab.values[index - 1]);
-        },
-        destinations: [
-          const NavigationDestination(
-            icon: Icon(Icons.space_dashboard_outlined),
-            selectedIcon: Icon(Icons.space_dashboard_rounded),
-            label: '首页',
-          ),
-          for (final t in HomeTab.values)
-            NavigationDestination(
-              icon: _NavIconWithBadge(
-                icon: t.icon,
-                badgeText: t == HomeTab.alerts ? alertsBadgeText : null,
-              ),
-              label: t.label,
+      bottomNavigationBar: !widget.showBottomNavigation
+          ? null
+          : NavigationBar(
+              selectedIndex: selectedNavIndex,
+              onDestinationSelected: (index) {
+                if (index == 0) {
+                  _triggerPageAction('open-dashboard');
+                  return;
+                }
+                final selected = HomeTab.values[index - 1];
+                final actionId = switch (selected) {
+                  HomeTab.situation => 'open-situation',
+                  HomeTab.strategy => 'open-strategy',
+                  HomeTab.alerts => 'open-alerts',
+                  HomeTab.audit => 'open-audit',
+                };
+                _triggerPageAction(actionId);
+              },
+              destinations: [
+                const NavigationDestination(
+                  icon: Icon(Icons.space_dashboard_outlined),
+                  selectedIcon: Icon(Icons.space_dashboard_rounded),
+                  label: '首页',
+                ),
+                for (final t in HomeTab.values)
+                  NavigationDestination(
+                    icon: _NavIconWithBadge(
+                      icon: t.icon,
+                      badgeText: t == HomeTab.alerts ? alertsBadgeText : null,
+                    ),
+                    label: t.label,
+                  ),
+              ],
             ),
-        ],
-      ),
     );
   }
 }
@@ -267,7 +363,7 @@ class _DraggableXiaoyiLauncher extends StatelessWidget {
 
     return Semantics(
       button: true,
-      label: '可拖动的小懿精灵入口',
+      label: '可拖动的舷鸥精灵入口',
       child: GestureDetector(
         onTap: onTap,
         onLongPress: onLongPress,
@@ -319,7 +415,7 @@ class _DraggableXiaoyiLauncher extends StatelessWidget {
                   child: Image.asset(
                     'assets/images/xiaoyi_maritime_officer.png',
                     fit: BoxFit.cover,
-                    semanticLabel: '小懿Q版全系统助手',
+                    semanticLabel: '舷鸥Q版全系统助手',
                   ),
                 ),
                 Positioned(
@@ -370,7 +466,10 @@ class _OperationsCockpitState extends ConsumerState<_OperationsCockpit> {
     final strategyState = ref.watch(strategyControllerProvider);
     final auditTimeline = ref.watch(auditTimelineProvider);
     final notificationState = ref.watch(notificationCenterProvider);
-    final demoFlow = ref.watch(demoFlowProvider);
+    // Legacy stage cards are disabled for the explicit 18-step guide. Reading
+    // instead of watching prevents every guide status tick from rebuilding the
+    // complete dashboard and all of its data/assistant cards.
+    final demoFlow = ref.read(demoFlowProvider);
     final sharedEvidence = ref.watch(sharedSystemEvidenceProvider);
 
     final vm = _OverviewViewModel.from(
@@ -380,7 +479,7 @@ class _OperationsCockpitState extends ConsumerState<_OperationsCockpit> {
       notificationState: notificationState,
     );
 
-    final sharedFocus = demoFlow.isRunning
+    final sharedFocus = demoFlow.legacyStageCardsEnabled && demoFlow.isRunning
         ? _sharedFocusForDemo(demoFlow.stage)
         : vm.sharedFocus;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -455,7 +554,7 @@ class _OperationsCockpitState extends ConsumerState<_OperationsCockpit> {
                 ],
               ),
               const SizedBox(height: 12),
-              if (demoFlow.enabled)
+              if (demoFlow.legacyStageCardsEnabled)
                 _DemoDirectorCard(
                   state: demoFlow,
                   onStart: () => ref.read(demoFlowProvider.notifier).start(),
@@ -527,6 +626,8 @@ class _OperationsCockpitState extends ConsumerState<_OperationsCockpit> {
               ),
               const SizedBox(height: 10),
               _SharedSystemEvidenceCard(evidence: sharedEvidence),
+              const SizedBox(height: 10),
+              const DemoPortDataCard(),
               const SizedBox(height: 10),
               XiaoyiLeadershipPanel(onOpenTab: widget.onOpenTab),
               const SizedBox(height: 10),
@@ -622,9 +723,9 @@ class _SharedSystemEvidenceCard extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  value.auditChainValid ? '证据链有效' : '证据链异常',
+                  value.auditChainValid == true ? '证据链有效' : value.auditChainValid == false ? '证据链异常' : '证据链未提供',
                   style: TextStyle(
-                    color: value.auditChainValid
+                    color: value.auditChainValid == true
                         ? const Color(0xFF76F7C5)
                         : theme.colorScheme.error,
                     fontSize: 11,
@@ -635,18 +736,18 @@ class _SharedSystemEvidenceCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              '整套系统固定留出集（${value.datasetId} · ${value.testRows}步）：'
-              '泊位利用率 +${value.berthPointGain.toStringAsFixed(2)} 个百分点'
-              '（相对 +${value.berthImprovementPercent.toStringAsFixed(0)}%） / '
-              '待泊时间 -${value.waitReductionPercent.toStringAsFixed(0)}% / '
-              '情景用电成本 -${value.costReductionPercent.toStringAsFixed(0)}%',
+              '整套系统固定留出集（${value.datasetId} · ${value.testRows ?? '—'}步）：'
+              '泊位利用率 +${value.berthPointGain?.toStringAsFixed(2) ?? '—'} 个百分点'
+              '（相对 +${value.berthImprovementPercent?.toStringAsFixed(0) ?? '—'}%） / '
+              '待泊时间 -${value.waitReductionPercent?.toStringAsFixed(0) ?? '—'}% / '
+              '情景用电成本 -${value.costReductionPercent?.toStringAsFixed(0) ?? '—'}%',
               style: theme.textTheme.bodySmall,
             ),
             const SizedBox(height: 5),
             Text(
-              '移动闭环 ${value.workflowOperations} 项固定集成操作：'
-              '重复提交抑制 ${value.duplicateSuppressionPercent.toStringAsFixed(0)}% / '
-              '越权生产下发阻断 ${value.unsafeDispatchBlockPercent.toStringAsFixed(0)}%',
+              '移动闭环 ${value.workflowOperations ?? '—'} 项固定集成操作：'
+              '重复提交抑制 ${value.duplicateSuppressionPercent?.toStringAsFixed(0) ?? '—'}% / '
+              '越权生产下发阻断 ${value.unsafeDispatchBlockPercent?.toStringAsFixed(0) ?? '—'}%',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -764,7 +865,7 @@ class _DemoDirectorCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '态势 × 告警 × RL × 小懿 × 审计',
+                      '态势 × 告警 × RL × 舷鸥 × 审计',
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: const Color(0xFF9DC8F8),
                         fontWeight: FontWeight.w700,
@@ -2242,12 +2343,14 @@ class _SharedFocusBanner extends StatelessWidget {
   const _SharedFocusBanner({
     required this.notifier,
     required this.onOpenTab,
-    required this.demoFlow,
+    required this.demoIsRunning,
+    required this.demoStage,
   });
 
   final ValueNotifier<_SharedFocusState> notifier;
   final ValueChanged<HomeTab> onOpenTab;
-  final DemoFlowState demoFlow;
+  final bool demoIsRunning;
+  final DemoFlowStage demoStage;
 
   @override
   Widget build(BuildContext context) {
@@ -2257,8 +2360,8 @@ class _SharedFocusBanner extends StatelessWidget {
     return ValueListenableBuilder<_SharedFocusState>(
       valueListenable: notifier,
       builder: (context, focus, _) {
-        final resolvedFocus = demoFlow.isRunning
-            ? _sharedFocusForDemo(demoFlow.stage)
+        final resolvedFocus = demoIsRunning
+            ? _sharedFocusForDemo(demoStage)
             : focus;
         return InkWell(
           borderRadius: BorderRadius.circular(16),

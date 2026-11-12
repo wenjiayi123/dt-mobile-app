@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/dio_provider.dart';
+import '../../../core/network/shared_backend_status.dart';
 import 'xiaoyi_leadership_controller.dart';
 
 @immutable
@@ -42,8 +43,8 @@ class XiaoyiWebLinkageStatus {
 
   String get summary {
     if (!webLinkageReady) return 'Web 共享链路未通过完整核验';
-    if (xiaoyiOnline) return 'Web 共享后端、小懿服务与审计链均在线';
-    return 'Web 共享后端与审计链在线；小懿服务离线，保留后端证据兜底';
+    if (xiaoyiOnline) return 'Web 共享后端、舷鸥服务与审计链均在线';
+    return 'Web 共享后端与审计链在线；舷鸥服务离线，保留后端证据兜底';
   }
 
   factory XiaoyiWebLinkageStatus.fromResponses({
@@ -65,7 +66,7 @@ class XiaoyiWebLinkageStatus {
       assistantGatewayAvailable:
           routes['/api/assistant/actions/execute'] == true,
       xiaoyiOnline: xiaoyi['online'] == true && xiaoyi['chat_capable'] == true,
-      xiaoyiLabel: xiaoyi['label']?.toString() ?? '小懿状态未知',
+      xiaoyiLabel: xiaoyi['label']?.toString() ?? '舷鸥状态未知',
       auditChainValid: auditVerification['valid'] == true,
       checkedAt: DateTime.now(),
     );
@@ -112,7 +113,7 @@ class XiaoyiWebActionReceipt {
         execution['mode'] != 'dry_run' ||
         execution['executed'] != false ||
         openUrl.isEmpty) {
-      throw const FormatException('Web 小懿网关回执字段不完整或越过 dry-run 边界');
+      throw const FormatException('Web 舷鸥网关回执字段不完整或越过 dry-run 边界');
     }
     return XiaoyiWebActionReceipt(
       actionId: actionId,
@@ -127,20 +128,29 @@ class XiaoyiWebActionReceipt {
 }
 
 class XiaoyiWebLinkageRepository {
-  XiaoyiWebLinkageRepository(this._dio);
+  XiaoyiWebLinkageRepository(
+    this._dio, {
+    SharedBackendStatusRepository? sharedStatusRepository,
+  }) : _sharedStatusRepository =
+           sharedStatusRepository ?? SharedBackendStatusRepository(_dio);
 
   final Dio _dio;
+  final SharedBackendStatusRepository _sharedStatusRepository;
 
   Future<XiaoyiWebLinkageStatus> checkStatus() async {
-    final responses = await Future.wait<Response<Object>>([
-      _dio.get<Object>('/api/mobile/status'),
-      _dio.get<Object>('/api/rl/integration/health'),
-      _dio.get<Object>('/api/mobile/audit/verify'),
+    final responses = await Future.wait<Map<String, dynamic>>([
+      _sharedStatusRepository.loadStatus(),
+      _dio
+          .get<Object>('/api/rl/integration/health')
+          .then((response) => _map(response.data)),
+      _dio
+          .get<Object>('/api/mobile/audit/verify')
+          .then((response) => _map(response.data)),
     ]);
     return XiaoyiWebLinkageStatus.fromResponses(
-      mobileStatus: _map(responses[0].data),
-      integrationHealth: _map(responses[1].data),
-      auditVerification: _map(responses[2].data),
+      mobileStatus: responses[0],
+      integrationHealth: responses[1],
+      auditVerification: responses[2],
     );
   }
 
@@ -168,7 +178,10 @@ class XiaoyiWebLinkageRepository {
 }
 
 final xiaoyiWebLinkageRepositoryProvider = Provider<XiaoyiWebLinkageRepository>(
-  (ref) => XiaoyiWebLinkageRepository(ref.read(dioProvider)),
+  (ref) => XiaoyiWebLinkageRepository(
+    ref.read(dioProvider),
+    sharedStatusRepository: ref.read(sharedBackendStatusRepositoryProvider),
+  ),
 );
 
 final xiaoyiWebLinkageStatusProvider = FutureProvider<XiaoyiWebLinkageStatus>(

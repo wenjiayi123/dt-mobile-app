@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/platform/runtime_profile.dart';
+
 enum IntelligentActionTone { reinforcement, twin, xiaoyi }
 
 class IntelligentActionButton extends StatefulWidget {
@@ -56,7 +58,7 @@ class _IntelligentActionButtonState extends State<IntelligentActionButton>
     super.didChangeDependencies();
     final reduceMotion =
         MediaQuery.maybeOf(context)?.disableAnimations ?? false;
-    if (reduceMotion) {
+    if (reduceMotion || RuntimeProfile.reduceAmbientMotion) {
       _ambientController.stop();
       _ambientController.value = 0.35;
     } else if (!_ambientController.isAnimating) {

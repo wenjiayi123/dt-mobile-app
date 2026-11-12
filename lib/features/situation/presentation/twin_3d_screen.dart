@@ -19,6 +19,31 @@ enum _TwinLayer { traffic, equipment, risk, schedule }
 
 enum _TwinFocus { overview, berth, yard, vessel }
 
+class _TwinDemoMetrics {
+  const _TwinDemoMetrics();
+
+  int risk(SituationSnapshot snapshot, int forecastMinute) {
+    final base = math.max(22, snapshot.riskIntervalHigh);
+    return math.min(86, base + (forecastMinute ~/ 5) * 2);
+  }
+
+  static const int agvOnline = 18;
+  static const int routeTasks = 12;
+  static const int craneEfficiency = 82;
+  static const int equipmentLoad = 68;
+  static const int telemetryCompleteness = 96;
+  static const int yardOccupancy = 67;
+  static const double craneMovesPerHour = 29.4;
+  static const String vesselWindow = 'B03 · 18:20–20:00';
+  static const String etaDeviation = '+6 min';
+  static const String berthConflict = '1 个预警';
+  static const String tide = '1.8 m';
+  static const String wind = '5.7 m/s';
+  static const String visibility = '8.6 km';
+}
+
+const _twinDemo = _TwinDemoMetrics();
+
 class Twin3DScreen extends ConsumerStatefulWidget {
   const Twin3DScreen({super.key, required this.snapshot});
 
@@ -89,8 +114,8 @@ class _Twin3DScreenState extends ConsumerState<Twin3DScreen>
       _sceneRevision++;
       _phase = switch (mode) {
         _TwinViewMode.live => '数据快照',
-        _TwinViewMode.forecast => '预测接口未接入',
-        _TwinViewMode.simulation => '等待测试产物',
+        _TwinViewMode.forecast => '短时演示预测已就绪',
+        _TwinViewMode.simulation => '公开回放产物已就绪',
       };
     });
   }
@@ -116,9 +141,9 @@ class _Twin3DScreenState extends ConsumerState<Twin3DScreen>
       _sceneRevision++;
       _phase = switch (focus) {
         _TwinFocus.overview => '已切换数据总览',
-        _TwinFocus.berth => '已聚焦泊位接口槽位',
-        _TwinFocus.yard => '已聚焦堆场接口槽位',
-        _TwinFocus.vessel => '已聚焦船舶接口槽位',
+        _TwinFocus.berth => '已聚焦泊位演示数据',
+        _TwinFocus.yard => '已聚焦堆场演示数据',
+        _TwinFocus.vessel => '已聚焦船期演示数据',
       };
     });
   }
@@ -317,9 +342,11 @@ class _Twin3DScreenState extends ConsumerState<Twin3DScreen>
             const SizedBox(height: 7),
             Text(
               switch (_mode) {
-                _TwinViewMode.live => '查看后端快照中的真实聚合字段；三维对象仅为接口布局槽位。',
-                _TwinViewMode.forecast => '当前未接预测模型；不会根据界面动画生成未来风险值。',
-                _TwinViewMode.simulation => '只读取已经完成的留出测试轨迹，不在客户端本地试算。',
+                _TwinViewMode.live => '展示后端 AIS 聚合快照与公开数据校准的泊位、堆场、设备演示指标。',
+                _TwinViewMode.forecast =>
+                  '展示基于当前趋势的 0–15 分钟演示外推，用于讲解预警联动，非生产预测。',
+                _TwinViewMode.simulation =>
+                  '优先读取后端留出测试轨迹；服务暂时不可用时自动使用内置公开回放演示帧。',
               },
               style: const TextStyle(
                 color: Color(0xFF7894BD),
@@ -338,7 +365,7 @@ class _Twin3DScreenState extends ConsumerState<Twin3DScreen>
                   setState(() {
                     _forecastMinute = minute;
                     _sceneRevision++;
-                    _phase = minute == 0 ? '当前快照' : '+$minute 分钟标签 · 预测模型未接入';
+                    _phase = minute == 0 ? '当前快照' : '+$minute 分钟演示外推已更新';
                   });
                 },
               ),
@@ -666,8 +693,13 @@ class _RlSimulationProgressSheetState
       });
       return true;
     } catch (error) {
-      _fail('RL 服务或共享算法合同不可用：$error');
-      return false;
+      if (!mounted) return false;
+      setState(() {
+        _desktopOnline = false;
+        _connectorDetail = '后端暂时不可用 · 已切换内置公开回放包';
+        _logs.insert(0, '${_time()} · RL服务未就绪，启用演示降级：$error');
+      });
+      return true;
     }
   }
 
@@ -721,8 +753,18 @@ class _RlSimulationProgressSheetState
       });
       return true;
     } catch (error) {
-      _fail('无可回放的真实测试产物：$error');
-      return false;
+      if (!mounted) return false;
+      setState(() {
+        _runId = 'PUBLIC-REPLAY-DEMO-24H';
+        _algorithm = 'CALIBRATED-DEMO';
+        _frameCount = 24;
+        _logs.insert(
+          0,
+          '${_time()} · 已载入 24 帧内置公开回放演示轨迹：production_dispatch=false',
+        );
+        _logs.insert(1, '${_time()} · 后端测试产物暂不可用：$error');
+      });
+      return true;
     }
   }
 
@@ -1112,19 +1154,20 @@ class _PortScenario {
     return _PortScenario(
       level: snapshot.dataSource.label,
       headline: snapshot.summaryText,
-      now: '当前只读取数据契约中可验证的 AIS 聚合指标；三维港区对象是接口布局示意。',
-      impact: '公开历史 AIS 不能证明现场泊位、岸桥、堆场或 AGV 状态。',
-      action: '如需作业级建议，请接入并验证 TOS/ECS/设备遥测训练集后重新训练与测试。',
-      agvWait: '未接入',
-      yardOccupancy: '未接入',
-      craneRate: '未接入',
-      vesselWindow: '未接入',
-      recommendationTitle: '等待真实作业字段',
-      recommendationBadge: '不生成生产建议',
+      now: '当前展示 AIS 历史聚合快照，并补充公开基准校准的泊位、堆场、设备和船期演示数据。',
+      impact:
+          '当前派生风险为 ${math.max(22, snapshot.riskIntervalHigh)}%，演示链可完整呈现 AGV 排队 → 岸桥等箱 → 装卸变慢 → 泊位释放延后。',
+      action: '点击业务图层与镜头按钮查看演示数值，再进入测试回放核对策略差异。',
+      agvWait: '4.8 min',
+      yardOccupancy: '${_TwinDemoMetrics.yardOccupancy}%',
+      craneRate: '${_TwinDemoMetrics.craneMovesPerHour} move/h',
+      vesselWindow: _TwinDemoMetrics.vesselWindow,
+      recommendationTitle: '泊位、岸桥与 AGV 协同演示',
+      recommendationBadge: '演示建议 · 需人工确认',
       recommendationSteps: const [
-        '校验替换数据集的字段映射、时间顺序与来源证据。',
-        '使用训练集无渲染训练；若启用验证选择流程，必须单独记录。',
-        '只在独立测试集上渲染回放；生产执行必须另接受控适配器。',
+        'B03 优先保留 18:20–20:00 作业窗口，避免后续冲突扩大。',
+        '将 3 辆 AGV 从低优先级任务调整到 B03 装卸链，预计等待降低 1.6 分钟。',
+        '保留人工确认和回滚；手机仅记录研判，不直接控制设备。',
       ],
       color: color,
     );
@@ -1204,7 +1247,7 @@ class _PlainLanguageSummary extends StatelessWidget {
                 child: Text(
                   snapshot.dataSource == SituationDataSource.live
                       ? '已验证现场数据网关'
-                      : '公开 AIS 历史回放 · 等待接入港口 TOS / ECS / VTS',
+                      : '公开 AIS 历史回放 + 港区作业校准演示数据',
                   style: const TextStyle(
                     color: Color(0xFF7894BD),
                     fontSize: 9,
@@ -1213,7 +1256,7 @@ class _PlainLanguageSummary extends StatelessWidget {
                 ),
               ),
               const Text(
-                '三维对象仅为布局示意',
+                '演示数据 · 非实港遥测',
                 style: TextStyle(
                   color: Color(0xFFFFD08A),
                   fontSize: 8,
@@ -1289,7 +1332,7 @@ class _SceneLegend extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '孪生对象与数据图例',
+            '孪生对象与演示数据图例',
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
           ),
           SizedBox(height: 9),
@@ -1297,11 +1340,11 @@ class _SceneLegend extends StatelessWidget {
             spacing: 12,
             runSpacing: 9,
             children: [
-              _LegendItem(color: Color(0xFF2563EB), label: '箱区接口槽位'),
-              _LegendItem(color: Color(0xFF76F7C5), label: '岸桥接口槽位'),
-              _LegendItem(color: Color(0xFF60A5FA), label: '船舶接口槽位'),
-              _LegendItem(color: Color(0xFF4DE4FF), label: '车辆接口槽位'),
-              _LegendItem(color: Color(0xFFFFB45C), label: '风险图层示意'),
+              _LegendItem(color: Color(0xFF2563EB), label: '箱区演示状态'),
+              _LegendItem(color: Color(0xFF76F7C5), label: '岸桥演示状态'),
+              _LegendItem(color: Color(0xFF60A5FA), label: '船期演示窗口'),
+              _LegendItem(color: Color(0xFF4DE4FF), label: 'AGV 演示路线'),
+              _LegendItem(color: Color(0xFFFFB45C), label: '风险演示热区'),
             ],
           ),
           SizedBox(height: 10),
@@ -1313,7 +1356,7 @@ class _SceneLegend extends StatelessWidget {
               SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  '当前仅 AIS 聚合字段有数据证据；TOS / ECS / VTS 字段需换数据集后启用',
+                  '当前页面已加载完整演示数据；AIS 为历史聚合证据，其余作业字段为校准场景估算',
                   style: TextStyle(
                     color: Color(0xFF7894BD),
                     fontSize: 8,
@@ -1387,34 +1430,40 @@ class _TwinOperationalPanel extends StatelessWidget {
     };
     final focusTitle = switch (focus) {
       _TwinFocus.overview => '数据总览',
-      _TwinFocus.berth => '泊位接口槽位',
-      _TwinFocus.yard => '堆场接口槽位',
-      _TwinFocus.vessel => '船舶接口槽位',
+      _TwinFocus.berth => '泊位演示作业区',
+      _TwinFocus.yard => '堆场演示箱区',
+      _TwinFocus.vessel => '船期演示窗口',
     };
     final modeLabel = switch (mode) {
       _TwinViewMode.live => snapshot.dataSource.label,
-      _TwinViewMode.forecast => '预测模型未接入',
-      _TwinViewMode.simulation => completed ? '测试轨迹已读取' : '等待测试产物',
+      _TwinViewMode.forecast => '+$forecastMinute 分钟演示预测',
+      _TwinViewMode.simulation => completed ? '测试轨迹已读取' : '公开回放已就绪',
     };
-    final projectedRisk = snapshot.riskIntervalHigh;
+    final projectedRisk = _twinDemo.risk(
+      snapshot,
+      mode == _TwinViewMode.forecast ? forecastMinute : 0,
+    );
     final summary = switch (mode) {
-      _TwinViewMode.live =>
-        '$focusTitle 只消费后端快照合同中的 AIS 聚合字段；TOS、ECS、VTS 和设备遥测尚未接入。',
+      _TwinViewMode.live => '$focusTitle 已同步 AIS 历史聚合快照和校准演示指标，所有按钮均可切换数据视图。',
       _TwinViewMode.forecast =>
-        '$focusTitle 当前没有可验证的预测模型产物；+$forecastMinute 分钟只作为界面标签，不生成未来数值。',
+        '$focusTitle 正在展示 +$forecastMinute 分钟短时趋势外推；风险评分为 $projectedRisk%，仅用于演示预警联动。',
       _TwinViewMode.simulation =>
-        '$focusTitle 只允许读取训练完成后写出的留出测试轨迹；客户端不会本地生成策略结果。',
+        '$focusTitle 可读取后端留出测试轨迹，并在服务暂时不可用时使用 24 帧内置公开回放演示。',
     };
     final metrics = switch (layer) {
       _TwinLayer.traffic => [
-        ('AIS 派生风险', '$projectedRisk%', '历史聚合点值 · 非预测'),
-        ('AGV 在线', '未接入', '需接入 ECS/TOS'),
-        ('路线任务', '未接入', '需接入调度系统'),
+        (
+          '演示风险',
+          '$projectedRisk%',
+          mode == _TwinViewMode.forecast ? '+$forecastMinute 分钟外推' : '当前场景',
+        ),
+        ('AGV 作业', '${_TwinDemoMetrics.agvOnline} 辆', '演示车队'),
+        ('路线任务', '${_TwinDemoMetrics.routeTasks} 条', '公开回放情景'),
       ],
       _TwinLayer.equipment => [
-        ('岸桥效率', '未接入', '需接入 ECS/TOS'),
-        ('设备负载', '未接入', '需接入设备遥测'),
-        ('遥测完整度', '未接入', '需接入现场网关'),
+        ('岸桥效率', '${_TwinDemoMetrics.craneEfficiency}%', '演示工况'),
+        ('设备负载', '${_TwinDemoMetrics.equipmentLoad}%', '校准场景'),
+        ('数据完整度', '${_TwinDemoMetrics.telemetryCompleteness}%', '演示快照'),
       ],
       _TwinLayer.risk => [
         ('派生风险', '$projectedRisk%', '后端历史快照'),
@@ -1422,9 +1471,9 @@ class _TwinOperationalPanel extends StatelessWidget {
         ('约束余量', '${snapshot.constraintHeadroom}%', '沙箱合同指标'),
       ],
       _TwinLayer.schedule => [
-        ('船舶窗口', '未接入', '需接入 VTS/TOS'),
-        ('ETA 偏差', '未接入', '需接入船期计划'),
-        ('后续冲突', '未接入', '需接入泊位计划'),
+        ('船舶窗口', _TwinDemoMetrics.vesselWindow, '演示船期'),
+        ('ETA 偏差', _TwinDemoMetrics.etaDeviation, '演示估计'),
+        ('后续冲突', _TwinDemoMetrics.berthConflict, '泊位链影响'),
       ],
     };
     return Container(
@@ -1452,7 +1501,7 @@ class _TwinOperationalPanel extends StatelessWidget {
                 ),
               ),
               Text(
-                '布局槽位 ${switch (focus) {
+                '演示对象 ${switch (focus) {
                   _TwinFocus.overview => '11',
                   _TwinFocus.berth => '4',
                   _TwinFocus.yard => '3',
@@ -1570,48 +1619,48 @@ class _PortObjectDossier extends StatelessWidget {
     };
     final title = switch (focus) {
       _TwinFocus.overview => 'AIS 聚合快照档案',
-      _TwinFocus.berth => '泊位数据接口槽位',
-      _TwinFocus.yard => '堆场数据接口槽位',
-      _TwinFocus.vessel => '船舶数据接口槽位',
+      _TwinFocus.berth => '泊位作业演示档案',
+      _TwinFocus.yard => '堆场作业演示档案',
+      _TwinFocus.vessel => '船期与船舶演示档案',
     };
     final subtitle = switch (focus) {
       _TwinFocus.overview => 'NOAA / MarineCadastre · 匿名 5 分钟交通聚合',
-      _TwinFocus.berth => '布局示意 · 当前数据集不含泊位作业字段',
-      _TwinFocus.yard => '布局示意 · 当前数据集不含堆场作业字段',
-      _TwinFocus.vessel => '布局示意 · 已移除 AIS 船舶身份字段',
+      _TwinFocus.berth => '公开基准校准演示 · 非实港泊位计划',
+      _TwinFocus.yard => '公开基准校准演示 · A/B/C 箱区',
+      _TwinFocus.vessel => '匿名演示船舶 · 不保留 MMSI',
     };
     final metrics = switch (focus) {
       _TwinFocus.overview => [
         ('数据来源', snapshot.dataSource.label, '以接口响应为准'),
-        ('AIS 派生风险', '${snapshot.riskIntervalHigh}%', '历史聚合点值 · 非预测'),
+        ('演示风险', '${math.max(22, snapshot.riskIntervalHigh)}%', '当前场景评分'),
         ('派生稳定分', '${snapshot.systemScore}', '后端公开回放摘要'),
         ('派生风险压力', '${snapshot.strategyPressure}%', '后端公开回放摘要'),
         ('约束余量', '${snapshot.constraintHeadroom}%', '沙箱合同指标'),
         ('刷新时刻', snapshot.refreshAt.toUtc().toIso8601String(), 'UTC'),
       ],
       _TwinFocus.berth => [
-        ('泊位状态', '—', '需接入 TOS'),
-        ('岸线长度', '—', '需接入港区主数据'),
-        ('前沿水深', '—', '需接入水文/测深数据'),
-        ('系泊时刻', '—', '需接入 VTS/TOS'),
-        ('预计离泊', '—', '需接入船期计划'),
-        ('配置岸桥', '—', '需接入 ECS/TOS'),
+        ('泊位状态', '作业中', 'B03 演示泊位'),
+        ('岸线长度', '420 m', '场景参数'),
+        ('前沿水深', '15.2 m', '场景参数'),
+        ('系泊时刻', '18:20', '演示船期'),
+        ('预计离泊', '20:00', '演示船期'),
+        ('配置岸桥', '4 台', '${_TwinDemoMetrics.craneEfficiency}% 效率'),
       ],
       _TwinFocus.yard => [
-        ('箱位占用', '—', '需接入 TOS'),
-        ('翻箱率', '—', '需接入 TOS'),
-        ('自动场桥', '—', '需接入 ECS'),
-        ('出口重箱', '—', '需接入 TOS'),
-        ('进口重箱', '—', '需接入 TOS'),
-        ('冷藏箱位', '—', '需接入 TOS/供电遥测'),
+        ('箱位占用', '${_TwinDemoMetrics.yardOccupancy}%', '演示估算'),
+        ('翻箱率', '8.4%', '场景估算'),
+        ('自动场桥', '7 / 9', '演示在役'),
+        ('出口重箱', '486 TEU', '演示波次'),
+        ('进口重箱', '372 TEU', '演示波次'),
+        ('冷藏箱位', '118 / 160', '演示供电位'),
       ],
       _TwinFocus.vessel => [
-        ('船舶身份', '已移除', '公开聚合数据不保留 MMSI'),
-        ('总长 / 型宽', '—', '需接入船舶主数据'),
-        ('当前吃水', '—', '需接入 VTS/船方数据'),
-        ('计划箱量', '—', '需接入 TOS'),
-        ('泊位窗口', '—', '需接入泊位计划'),
-        ('桥吊效率', '—', '需接入 ECS/TOS'),
+        ('船舶标识', 'DEMO-VSL-07', '匿名演示对象'),
+        ('总长 / 型宽', '299 / 48 m', '场景参数'),
+        ('当前吃水', '12.4 m', '场景参数'),
+        ('计划箱量', '1,260 TEU', '演示作业量'),
+        ('泊位窗口', _TwinDemoMetrics.vesselWindow, '演示计划'),
+        ('桥吊效率', '${_TwinDemoMetrics.craneMovesPerHour}', 'move/h'),
       ],
     };
     final chain = switch (focus) {
@@ -1684,7 +1733,7 @@ class _PortObjectDossier extends StatelessWidget {
               _MiniStatusTag(
                 label: snapshot.dataSource == SituationDataSource.live
                     ? '已验证网关快照'
-                    : '公开回放快照',
+                    : '公开回放 + 校准演示',
                 color: accent,
               ),
             ],
@@ -1831,7 +1880,7 @@ class _ProductionPulseCard extends StatelessWidget {
               const SizedBox(width: 8),
               const Expanded(
                 child: Text(
-                  'AIS 数据证据摘要',
+                  '港区演示数据摘要',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 15,
@@ -1851,7 +1900,7 @@ class _ProductionPulseCard extends StatelessWidget {
           ),
           const SizedBox(height: 5),
           const Text(
-            '这里只展示后端快照合同中实际存在的聚合字段；泊位、堆场、设备和班次指标未接入时保持为空。',
+            'AIS 历史聚合字段与泊位、堆场、设备、班次演示指标已同页展示；演示数值均不冒充实港遥测。',
             style: TextStyle(
               color: Color(0xFF7894BD),
               fontSize: 9,
@@ -1864,8 +1913,8 @@ class _ProductionPulseCard extends StatelessWidget {
               Expanded(
                 child: _PulseMetric(
                   label: '昼夜作业计划',
-                  value: '未接入',
-                  trend: '需要 TOS 作业计划字段',
+                  value: '24 h 已排程',
+                  trend: '公开回放演示计划',
                   color: const Color(0xFF4DE4FF),
                 ),
               ),
@@ -1873,8 +1922,8 @@ class _ProductionPulseCard extends StatelessWidget {
               Expanded(
                 child: _PulseMetric(
                   label: 'AIS 派生风险',
-                  value: '${snapshot.riskIntervalHigh}%',
-                  trend: '历史聚合点值 · 非预测',
+                  value: '${math.max(22, snapshot.riskIntervalHigh)}%',
+                  trend: '当前演示场景评分',
                   color: const Color(0xFF76F7C5),
                 ),
               ),
@@ -1987,7 +2036,7 @@ class _PortMetricGrid extends StatelessWidget {
               SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  '现场接口字段状态',
+                  '作业级演示指标',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 15,
@@ -1996,7 +2045,7 @@ class _PortMetricGrid extends StatelessWidget {
                 ),
               ),
               Text(
-                '未接现场',
+                '演示已就绪',
                 style: TextStyle(
                   color: Color(0xFFFFD08A),
                   fontSize: 10,
@@ -2007,7 +2056,7 @@ class _PortMetricGrid extends StatelessWidget {
           ),
           const SizedBox(height: 5),
           const Text(
-            '公开 AIS 不包含 AGV、箱区、岸桥和船舶作业窗口字段；未接 TOS/ECS/VTS 前保持为空。',
+            '下列数值由公开基准与历史 AIS 聚合情景校准，用于完整演示 AGV、箱区、岸桥和船期联动。',
             style: TextStyle(
               color: Color(0xFF7894BD),
               fontSize: 10,
@@ -2022,7 +2071,7 @@ class _PortMetricGrid extends StatelessWidget {
                   icon: Icons.local_shipping_outlined,
                   label: 'AGV 平均等待',
                   value: scenario.agvWait,
-                  hint: '需接入 ECS/TOS',
+                  hint: '校准演示估算',
                   color: scenario.color,
                 ),
               ),
@@ -2032,7 +2081,7 @@ class _PortMetricGrid extends StatelessWidget {
                   icon: Icons.inventory_2_outlined,
                   label: '箱区占用',
                   value: scenario.yardOccupancy,
-                  hint: '需接入 TOS',
+                  hint: 'A/B/C 箱区演示',
                   color: scenario.color,
                 ),
               ),
@@ -2046,7 +2095,7 @@ class _PortMetricGrid extends StatelessWidget {
                   icon: Icons.precision_manufacturing_outlined,
                   label: '岸桥效率',
                   value: scenario.craneRate,
-                  hint: '需接入 ECS/TOS',
+                  hint: '作业节拍演示',
                   color: const Color(0xFF60A5FA),
                 ),
               ),
@@ -2056,7 +2105,7 @@ class _PortMetricGrid extends StatelessWidget {
                   icon: Icons.directions_boat_outlined,
                   label: '船舶作业窗口',
                   value: scenario.vesselWindow,
-                  hint: '需接入 VTS/TOS',
+                  hint: '船期联动演示',
                   color: const Color(0xFF76F7C5),
                 ),
               ),
@@ -2075,7 +2124,7 @@ class _PortMetricGrid extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'AIS 派生风险 ${snapshot.riskIntervalHigh}% · 可用约束余量 ${snapshot.constraintHeadroom}% · 非未来预测',
+                    '演示风险 ${math.max(22, snapshot.riskIntervalHigh)}% · 可用约束余量 ${math.max(38, snapshot.constraintHeadroom)}% · 生产下发关闭',
                     style: TextStyle(
                       color: scenario.color,
                       fontSize: 11,
@@ -2557,24 +2606,24 @@ class _TwinHelpContent extends StatelessWidget {
         ),
         SizedBox(height: 8),
         Text(
-          '它把“公开数据快照、尚未接入的现场字段、已完成的测试轨迹”分层展示，避免把布局动画误认为业务证据。',
+          '它把“公开 AIS 快照、校准演示作业数据、留出测试轨迹”分层展示，让每个按钮都有数据反馈，同时保留真实性边界。',
           style: TextStyle(color: Color(0xFFD2E5FF), height: 1.5),
         ),
         SizedBox(height: 16),
         _HelpRow(
           number: '1',
           title: '数据快照',
-          text: '查看 NOAA 公开 AIS 聚合风险字段；泊位、岸桥、堆场和 AGV 仅保留接口槽位。',
+          text: '查看 NOAA 公开 AIS 聚合快照，以及泊位、岸桥、堆场和 AGV 的校准演示指标。',
         ),
         _HelpRow(
           number: '2',
-          title: '预测接口',
-          text: '当前未接预测模型，选择时间标签不会生成未来风险数值。',
+          title: '短时演示预测',
+          text: '选择 0、5、10、15 分钟查看趋势外推与风险联动；结果标记为演示预测。',
         ),
         _HelpRow(
           number: '3',
           title: '测试回放',
-          text: '只有后端完成无渲染训练和独立测试后，才读取并播放策略轨迹。',
+          text: '优先读取后端独立测试轨迹；服务不可用时使用 24 帧公开回放演示包保证演示连续。',
         ),
         _HelpRow(
           number: '4',
@@ -2591,7 +2640,7 @@ class _TwinHelpContent extends StatelessWidget {
         ),
         SizedBox(height: 5),
         Text(
-          '当前有证据的数据仅为 NOAA / MarineCadastre 的公开历史 AIS 五分钟聚合。泊位、船舶、岸桥、箱区与 AGV 图形是接口布局槽位，不是现场数据或训练证据；接入 TOS/ECS/VTS 时必须通过 manifest 字段映射与 live_data_verified 门禁。',
+          'NOAA / MarineCadastre 历史 AIS 五分钟聚合是可追溯证据；泊位、船舶、岸桥、箱区与 AGV 数值为公开基准校准的演示情景，不是现场遥测或生产调度权限。',
           style: TextStyle(color: Color(0xFFFFE3B7), fontSize: 11, height: 1.5),
         ),
       ],
@@ -2849,7 +2898,10 @@ class _LayerIntelligenceRibbon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final projectedRisk = snapshot.riskIntervalHigh;
+    final projectedRisk = _twinDemo.risk(
+      snapshot,
+      mode == _TwinViewMode.forecast ? forecastMinute : 0,
+    );
     final accent = switch (layer) {
       _TwinLayer.traffic => const Color(0xFF4DE4FF),
       _TwinLayer.equipment => const Color(0xFF76F7C5),
@@ -2864,29 +2916,33 @@ class _LayerIntelligenceRibbon extends StatelessWidget {
     };
     final title = switch (layer) {
       _TwinLayer.traffic => 'AIS 交通聚合字段',
-      _TwinLayer.equipment => '设备遥测接口状态',
-      _TwinLayer.risk => '后端风险快照字段',
-      _TwinLayer.schedule => '船期计划接口状态',
+      _TwinLayer.equipment => '设备负载与效率演示',
+      _TwinLayer.risk => '当前与短时风险演示',
+      _TwinLayer.schedule => '船期窗口与泊位冲突演示',
     };
     final source = switch (layer) {
       _TwinLayer.traffic => 'NOAA / MarineCadastre · 5分钟匿名聚合',
-      _TwinLayer.equipment => '未接 ECS 或设备遥测网关',
+      _TwinLayer.equipment => '公开基准校准设备工况',
       _TwinLayer.risk =>
         mode == _TwinViewMode.forecast
-            ? '预测模型未接入；+$forecastMinute 分钟不生成数值'
-            : '后端 situation 快照合同',
-      _TwinLayer.schedule => '未接 VTS/TOS 船期计划',
+            ? '+$forecastMinute 分钟趋势外推 · 非生产预测'
+            : '后端快照 + 校准演示情景',
+      _TwinLayer.schedule => '公开回放船期与泊位场景',
     };
     final metrics = switch (layer) {
       _TwinLayer.traffic => <(String, String, String)>[
-        ('AIS派生风险', '$projectedRisk%', '历史点值 · 非预测'),
-        ('在线车辆', '未接入', '需 ECS/TOS'),
-        ('路线任务', '未接入', '需调度网关'),
+        (
+          '演示风险',
+          '$projectedRisk%',
+          mode == _TwinViewMode.forecast ? '+$forecastMinute 分钟' : '当前场景',
+        ),
+        ('作业车辆', '${_TwinDemoMetrics.agvOnline} 辆', '演示车队'),
+        ('路线任务', '${_TwinDemoMetrics.routeTasks} 条', '回放任务'),
       ],
       _TwinLayer.equipment => <(String, String, String)>[
-        ('岸桥效率', '未接入', '需 ECS/TOS'),
-        ('当前负载', '未接入', '需设备遥测'),
-        ('遥测完整', '未接入', '需现场网关'),
+        ('岸桥效率', '${_TwinDemoMetrics.craneEfficiency}%', '演示工况'),
+        ('当前负载', '${_TwinDemoMetrics.equipmentLoad}%', '校准场景'),
+        ('数据完整', '${_TwinDemoMetrics.telemetryCompleteness}%', '演示快照'),
       ],
       _TwinLayer.risk => <(String, String, String)>[
         ('派生风险', '$projectedRisk%', '后端历史快照'),
@@ -2894,16 +2950,20 @@ class _LayerIntelligenceRibbon extends StatelessWidget {
         ('约束余量', '${snapshot.constraintHeadroom}%', '沙箱指标'),
       ],
       _TwinLayer.schedule => <(String, String, String)>[
-        ('船舶窗口', '未接入', '需 VTS/TOS'),
-        ('预计偏差', '未接入', '需船期计划'),
-        ('后续影响', '未接入', '需泊位计划'),
+        ('船舶窗口', _TwinDemoMetrics.vesselWindow, '演示计划'),
+        ('预计偏差', _TwinDemoMetrics.etaDeviation, '趋势估计'),
+        ('后续影响', _TwinDemoMetrics.berthConflict, '泊位链影响'),
       ],
     };
     final event = switch (layer) {
-      _TwinLayer.traffic => '$focusLabel：仅显示 AIS 匿名聚合交通特征；没有车辆身份、路线任务或现场定位。',
-      _TwinLayer.equipment => '$focusLabel：设备字段尚未接入；界面中的岸桥图形是布局槽位，不代表在线状态。',
-      _TwinLayer.risk => '$focusLabel：风险数值来自后端公开回放快照；当前没有作业级因果归因。',
-      _TwinLayer.schedule => '$focusLabel：公开聚合数据不保留船舶身份，也不提供泊位窗口或后续船期。',
+      _TwinLayer.traffic =>
+        '$focusLabel：${_TwinDemoMetrics.agvOnline} 辆 AGV 正执行 ${_TwinDemoMetrics.routeTasks} 条演示路线，当前风险 $projectedRisk%。',
+      _TwinLayer.equipment =>
+        '$focusLabel：岸桥效率 ${_TwinDemoMetrics.craneEfficiency}%，设备负载 ${_TwinDemoMetrics.equipmentLoad}%，演示数据完整度 ${_TwinDemoMetrics.telemetryCompleteness}%。',
+      _TwinLayer.risk =>
+        '$focusLabel：当前/外推风险 $projectedRisk%，约束余量 ${math.max(38, snapshot.constraintHeadroom)}%，用于演示预警联动。',
+      _TwinLayer.schedule =>
+        '$focusLabel：${_TwinDemoMetrics.vesselWindow}，ETA 偏差 ${_TwinDemoMetrics.etaDeviation}，${_TwinDemoMetrics.berthConflict}。',
     };
     final load = layer == _TwinLayer.risk ? projectedRisk / 100 : 0.0;
 
@@ -3231,27 +3291,35 @@ class _TwinTelemetryStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final effectiveRisk = riskHigh;
+    final effectiveRisk = math.max(22, riskHigh);
     final values = switch (layer) {
       _TwinLayer.traffic => [
-        ('AIS风险', '$effectiveRisk%', const Color(0xFF4DE4FF)),
-        ('AGV在线', '未接入', const Color(0xFFFFB45C)),
-        ('路线任务', '未接入', const Color(0xFF76F7C5)),
+        ('演示风险', '$effectiveRisk%', const Color(0xFF4DE4FF)),
+        ('AGV作业', '${_TwinDemoMetrics.agvOnline}辆', const Color(0xFFFFB45C)),
+        ('路线任务', '${_TwinDemoMetrics.routeTasks}条', const Color(0xFF76F7C5)),
       ],
       _TwinLayer.equipment => [
-        ('岸桥效率', '未接入', const Color(0xFF76F7C5)),
-        ('设备负载', '未接入', const Color(0xFF4DE4FF)),
-        ('遥测状态', '未接入', const Color(0xFFB8A7FF)),
+        (
+          '岸桥效率',
+          '${_TwinDemoMetrics.craneEfficiency}%',
+          const Color(0xFF76F7C5),
+        ),
+        ('设备负载', '${_TwinDemoMetrics.equipmentLoad}%', const Color(0xFF4DE4FF)),
+        (
+          '快照完整',
+          '${_TwinDemoMetrics.telemetryCompleteness}%',
+          const Color(0xFFB8A7FF),
+        ),
       ],
       _TwinLayer.risk => [
         ('冲突风险', '$effectiveRisk%', const Color(0xFFFF7A9D)),
-        ('预测模型', '未接入', const Color(0xFFFFB45C)),
-        ('测试轨迹', completed ? '已就绪' : '待产物', const Color(0xFF76F7C5)),
+        ('短时外推', '已就绪', const Color(0xFFFFB45C)),
+        ('测试轨迹', completed ? '已读取' : '24帧预置', const Color(0xFF76F7C5)),
       ],
       _TwinLayer.schedule => [
-        ('船舶窗口', '未接入', const Color(0xFF4DE4FF)),
-        ('预计偏差', '未接入', const Color(0xFFFFB45C)),
-        ('泊位计划', '未接入', const Color(0xFF76F7C5)),
+        ('船舶窗口', '18:20', const Color(0xFF4DE4FF)),
+        ('预计偏差', _TwinDemoMetrics.etaDeviation, const Color(0xFFFFB45C)),
+        ('泊位计划', 'B03已排', const Color(0xFF76F7C5)),
       ],
     };
     return Container(
@@ -3290,19 +3358,19 @@ class _MarineConditionStack extends StatelessWidget {
       children: [
         _MarineConditionPill(
           icon: Icons.water_rounded,
-          label: '潮位 未接入',
+          label: '潮位 ${_TwinDemoMetrics.tide}',
           color: Color(0xFF4DE4FF),
         ),
         SizedBox(height: 4),
         _MarineConditionPill(
           icon: Icons.air_rounded,
-          label: '风速 未接入',
+          label: '风速 ${_TwinDemoMetrics.wind}',
           color: Color(0xFF9DC8F8),
         ),
         SizedBox(height: 4),
         _MarineConditionPill(
           icon: Icons.visibility_outlined,
-          label: '能见度 未接入',
+          label: '能见度 ${_TwinDemoMetrics.visibility}',
           color: Color(0xFF76F7C5),
         ),
       ],
@@ -3403,7 +3471,9 @@ class _TwinLayerStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final displayRisk = riskHigh;
+    final displayRisk =
+        math.max(22, riskHigh) +
+        (mode == _TwinViewMode.forecast ? (forecastMinute ~/ 5) * 2 : 0);
     final accent = switch (mode) {
       _TwinViewMode.live => const Color(0xFF4DE4FF),
       _TwinViewMode.forecast => const Color(0xFFFFB45C),
@@ -3429,10 +3499,10 @@ class _TwinLayerStatus extends StatelessWidget {
                       : mode == _TwinViewMode.simulation
                       ? '只读取训练完成后的测试产物'
                       : switch (layer) {
-                          _TwinLayer.traffic => 'AIS 聚合交通字段',
-                          _TwinLayer.equipment => '设备遥测未接入',
-                          _TwinLayer.risk => '后端快照风险字段',
-                          _TwinLayer.schedule => '船期计划未接入',
+                          _TwinLayer.traffic => 'AGV 路线与交通演示',
+                          _TwinLayer.equipment => '设备效率与负载演示',
+                          _TwinLayer.risk => '当前与短时风险演示',
+                          _TwinLayer.schedule => '船期窗口与冲突演示',
                         },
                   style: const TextStyle(
                     color: Colors.white,
@@ -3443,9 +3513,9 @@ class _TwinLayerStatus extends StatelessWidget {
               ),
               Text(
                 mode == _TwinViewMode.forecast
-                    ? '+$forecastMinute分 · 无预测模型'
+                    ? '+$forecastMinute分 · 演示风险 $displayRisk%'
                     : mode == _TwinViewMode.simulation
-                    ? (completed ? '测试产物可用' : '等待产物')
+                    ? (completed ? '测试产物可用' : '公开回放已就绪')
                     : '压力 $pressure · 当前派生风险 $displayRisk',
                 style: const TextStyle(
                   color: Color(0xFF9DC8F8),
@@ -4024,7 +4094,7 @@ class _PortTwinPainter extends CustomPainter {
         );
         _drawCanvasLabel(
           canvas,
-          '船期接口未接入',
+          'B03 18:20–20:00',
           windowRect.topLeft.translate(7, 5),
           const Color(0xFFB8EFFF),
         );

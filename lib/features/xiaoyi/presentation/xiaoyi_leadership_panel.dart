@@ -1,3 +1,5 @@
+import 'package:dt_mobile_app/features/xiaoyi/presentation/joint_harness_card.dart';
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -6,14 +8,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:dt_mobile_app/features/alerts/application/alerts_controller.dart';
 import 'package:dt_mobile_app/features/audit/application/audit_controller.dart';
+import 'package:dt_mobile_app/features/demo/application/demo_flow_controller.dart';
+import 'package:dt_mobile_app/features/demo/presentation/demo_guide_overlay.dart';
 import 'package:dt_mobile_app/features/home/application/home_tab_notifier.dart';
 import 'package:dt_mobile_app/features/situation/application/situation_controller.dart';
 import 'package:dt_mobile_app/features/situation/presentation/twin_3d_screen.dart';
 import 'package:dt_mobile_app/features/strategy/application/strategy_controller.dart';
+import 'package:dt_mobile_app/features/strategy/application/rl_training_controller.dart';
 import 'package:dt_mobile_app/features/xiaoyi/application/xiaoyi_leadership_controller.dart';
 import 'package:dt_mobile_app/features/xiaoyi/application/xiaoyi_web_linkage.dart';
 import 'package:dt_mobile_app/shared/ui/app_badge.dart';
 import 'package:dt_mobile_app/shared/ui/intelligent_action_button.dart';
+import 'package:dt_mobile_app/core/platform/runtime_profile.dart';
+import 'package:dt_mobile_app/features/xiaoyi/presentation/joint_harness_card.dart';
 
 class XiaoyiLeadershipPanel extends ConsumerStatefulWidget {
   const XiaoyiLeadershipPanel({super.key, required this.onOpenTab});
@@ -35,16 +42,41 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
   int _coreLinkageStage = -1;
   double _coreLinkageProgress = 0;
   String _coreLinkageDetail = '等待读取港区业务链路';
+  _XiaoyiQaResponse? _qaResponse;
+  final _qaPresentation = ValueNotifier<_XiaoyiQaResponse?>(null);
+  bool _qaPresentationOpen = false;
+  late final DemoAction _rlTaskAction;
+  late final DemoAction _generalQaAction;
+  late final DemoAction _dailyQaAction;
+  late final DemoAction _emergencyQaAction;
+  late final DemoFlowController _demoController;
 
   @override
   void initState() {
     super.initState();
+    _demoController = ref.read(demoFlowProvider.notifier);
     _commandController = TextEditingController();
+    _rlTaskAction = _dispatchRlTrainingTask;
+    _generalQaAction = () => _runQa(_XiaoyiQaMode.general);
+    _dailyQaAction = () => _runQa(_XiaoyiQaMode.daily);
+    _emergencyQaAction = () => _runQa(_XiaoyiQaMode.emergency);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _demoController.registerAction('xiaoyi-rl-task', _rlTaskAction);
+      _demoController.registerAction('xiaoyi-qa-general', _generalQaAction);
+      _demoController.registerAction('xiaoyi-qa-daily', _dailyQaAction);
+      _demoController.registerAction('xiaoyi-qa-emergency', _emergencyQaAction);
+    });
   }
 
   @override
   void dispose() {
+    _demoController.unregisterAction('xiaoyi-rl-task', _rlTaskAction);
+    _demoController.unregisterAction('xiaoyi-qa-general', _generalQaAction);
+    _demoController.unregisterAction('xiaoyi-qa-daily', _dailyQaAction);
+    _demoController.unregisterAction('xiaoyi-qa-emergency', _emergencyQaAction);
     _commandController.dispose();
+    _qaPresentation.dispose();
     super.dispose();
   }
 
@@ -56,6 +88,12 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
     final strategy = ref.watch(strategyControllerProvider);
     final audit = ref.watch(auditTimelineProvider);
     final webLinkage = ref.watch(xiaoyiWebLinkageStatusProvider);
+    final crossSystemReceipt = ref.watch(xiaoyiCrossSystemReceiptProvider);
+    final demoHighlight = ref.watch(
+      demoFlowProvider.select(
+        (flow) => (isOpen: flow.isOpen, actionId: flow.currentStep.actionId),
+      ),
+    );
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
 
@@ -107,14 +145,14 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '小懿决策助手',
+                      '舷鸥 · GullMate',
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w900,
                       ),
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      '研判、审批、汇报，一处完成。',
+                      '你好，我是小鸥。',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: scheme.onSurfaceVariant,
                         height: 1.35,
@@ -142,6 +180,11 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
           ),
           const SizedBox(height: 8),
           _XiaoyiWebStatusStrip(status: webLinkage),
+          const JointHarnessCard(),
+          if (crossSystemReceipt != null) ...[
+            const SizedBox(height: 9),
+            _XiaoyiCrossSystemReceiptCard(receipt: crossSystemReceipt),
+          ],
           if (!_isExpanded) ...[
             const SizedBox(height: 12),
             _XiaoyiCoreLinkageConsole(
@@ -150,22 +193,31 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
               stageIndex: _coreLinkageStage,
               progress: _coreLinkageProgress,
               stageDetail: _coreLinkageDetail,
+              rlTaskHighlighted:
+                  demoHighlight.isOpen &&
+                  demoHighlight.actionId == 'xiaoyi-rl-task',
+              onRlTask: () => ref
+                  .read(demoFlowProvider.notifier)
+                  .triggerAction(
+                    'xiaoyi-rl-task',
+                    origin: DemoActionOrigin.page,
+                  ),
               onLinkage: () => _runCoreLinkage(context),
               onSituation: () => widget.onOpenTab(HomeTab.situation),
               onStrategy: () => _executeAction(
                 context,
                 'run_policy_test',
-                command: '小懿，运行强化学习策略测试',
+                command: '小鸥，运行强化学习策略测试',
               ),
               onTwin: () => _executeAction(
                 context,
                 'open_simulation_demo',
-                command: '小懿，打开3D孪生屏',
+                command: '小鸥，打开3D孪生屏',
               ),
               onBrief: () => _executeAction(
                 context,
                 'generate_meeting_brief',
-                command: '小懿，生成领导会议简报',
+                command: '小鸥，生成领导会议简报',
               ),
             ),
           ],
@@ -185,6 +237,13 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
                 hintText: '例如：生成会议简报 / 验证策略能否上线',
               ),
               onChanged: controller.setCommand,
+            ),
+            const SizedBox(height: 8),
+            _XiaoyiQaPrompts(
+              busy: _executingActionId != null,
+              onGeneral: () => _triggerQaFromPage('xiaoyi-qa-general'),
+              onDaily: () => _triggerQaFromPage('xiaoyi-qa-daily'),
+              onEmergency: () => _triggerQaFromPage('xiaoyi-qa-emergency'),
             ),
             const SizedBox(height: 10),
             DropdownButtonFormField<String>(
@@ -224,6 +283,10 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
             ),
             const SizedBox(height: 10),
             _XiaoyiAnswerCard(state: state),
+            if (_qaResponse != null && !_qaPresentationOpen) ...[
+              const SizedBox(height: 9),
+              _XiaoyiQaResponseCard(response: _qaResponse!),
+            ],
           ],
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 460),
@@ -262,6 +325,185 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
       state.selectedActionId,
       command: state.commandText,
     );
+  }
+
+  void _triggerQaFromPage(String actionId) {
+    unawaited(
+      ref
+          .read(demoFlowProvider.notifier)
+          .triggerAction(actionId, origin: DemoActionOrigin.page),
+    );
+  }
+
+  Future<void> _dispatchRlTrainingTask() async {
+    const command = '小鸥，以综合多目标配置 PPO 训练，安全约束严格，使用公开数据留出集验证';
+    final leadership = ref.read(xiaoyiLeadershipControllerProvider.notifier);
+    final action = leadership.judge(
+      actionId: 'open_strategy_panel',
+      command: command,
+    );
+    if (action == null) throw StateError('舷鸥未能识别 RL 训练任务');
+    setState(() {
+      _isExpanded = true;
+      _qaResponse = null;
+      _executingActionId = action.id;
+    });
+    _revealPanel();
+    await Future<void>.delayed(const Duration(milliseconds: 90));
+    final receipt = await _requestWebReceipt(action);
+    ref.read(rlTrainingProvider.notifier).applyXiaoyiRecommendedConfig();
+    final training = ref.read(rlTrainingProvider);
+    final traceId = ref.read(demoFlowProvider).traceId;
+    ref
+        .read(auditTimelineProvider.notifier)
+        .recordEvent(
+          source: AuditEventSource.aiSuggestion,
+          actionType: AuditActionType.guidance,
+          stateSummary: '舷鸥识别 RL 训练目标',
+          policySetSummary:
+              '${training.config.algorithmLabel} · ${training.config.objectiveLabel} · ${training.config.totalSteps}步',
+          humanChoiceSummary: '仅生成待确认契约；电脑端人工批准后才能训练',
+          payload: <String, Object?>{
+            'source': 'xiaoyi_rl_training_task',
+            'taskGoal': command,
+            'targetSystem': 'port-dt-multi RL desktop panel',
+            'datasetVersion': training.datasetId,
+            'datasetSha256': training.datasetSha256,
+            'algorithm': training.config.algorithm,
+            'totalSteps': training.config.totalSteps,
+            'guardrail': training.config.guardrail,
+            'traceId': traceId,
+            'productionAuthority': false,
+            'humanConfirmationRequired': true,
+            'webLinkageVerified': receipt.verified,
+          },
+        );
+    if (!mounted) return;
+    setState(() {
+      _lastResult = _XiaoyiExecutionResult(
+        title: '已生成 RL 训练任务',
+        detail:
+            '识别目标：${training.config.objectiveLabel}；推荐 ${training.config.algorithmLabel}、${training.config.totalSteps}步、种子 ${training.config.seed}、${training.config.guardrailLabel}安全门。',
+        nextStep: '参数已写入待确认契约。请打开策略页核对数据集、奖励权重和人工审批边界。',
+        target: 'RL 训练接力',
+        tone: receipt.verified == false
+            ? AppBadgeTone.watch
+            : AppBadgeTone.success,
+        webLinkageVerified: receipt.verified,
+        webLinkageMessage: receipt.message,
+      );
+      _executingActionId = null;
+    });
+  }
+
+  Future<void> _runQa(_XiaoyiQaMode mode) async {
+    final prompt = switch (mode) {
+      _XiaoyiQaMode.general => '小鸥，什么是港区策略压力？数据依据是什么？',
+      _XiaoyiQaMode.daily => '小鸥，日常值班应该怎样检查当前运行状态？',
+      _XiaoyiQaMode.emergency => '小鸥，如果高优告警伴随安全余量下降，现场先做什么？',
+    };
+    final chunks = switch (mode) {
+      _XiaoyiQaMode.general => <String>[
+        '策略压力是对作业拥堵、资源紧张和风险边界的综合表征。',
+        '当前依据来自共享后端态势快照、公开数据校准回放和已登记策略结果。',
+        '置信范围：适用于演示与离线决策验证；不代替现场传感器和人工值班判断。',
+      ],
+      _XiaoyiQaMode.daily => <String>[
+        '1. 先核对数据新鲜度、来源标签和系统稳定度。',
+        '2. 再看高优告警、策略压力和待审批任务；异常时从告警页进入人工处置。',
+        '3. 交班前打开审计回溯，核对 Trace ID、人工表态和恢复门槛。',
+      ],
+      _XiaoyiQaMode.emergency => <String>[
+        '风险结论：将安全余量下降视为高优先事件，暂停自动执行建议。',
+        '处置顺序：人员保护 → 隔离受影响区域/设备 → 通知值班长与应急链路 → 保留证据。',
+        '恢复门槛：数据链恢复、约束验证通过、现场负责人人工确认后才可恢复；舷鸥无生产控制权。',
+      ],
+    };
+    ref.read(xiaoyiLeadershipControllerProvider.notifier).setCommand(prompt);
+    setState(() {
+      _isExpanded = true;
+      _qaResponse = _XiaoyiQaResponse(
+        mode: mode,
+        prompt: prompt,
+        text: '',
+        streaming: true,
+      );
+    });
+    _qaPresentation.value = _qaResponse;
+    _showQaPresentation();
+    for (final chunk in chunks) {
+      await Future<void>.delayed(const Duration(milliseconds: 380));
+      if (!mounted) return;
+      setState(() {
+        _qaResponse = _qaResponse!.copyWith(
+          text: _qaResponse!.text.isEmpty
+              ? chunk
+              : '${_qaResponse!.text}\n$chunk',
+        );
+      });
+      _qaPresentation.value = _qaResponse;
+    }
+    if (!mounted) return;
+    setState(() => _qaResponse = _qaResponse!.copyWith(streaming: false));
+    _qaPresentation.value = _qaResponse;
+  }
+
+  void _showQaPresentation() {
+    if (_qaPresentationOpen) return;
+    _qaPresentationOpen = true;
+    final stepId = ref.read(demoFlowProvider).currentStep.id;
+    final snapshot = ref.read(alertsSnapshotProvider).asData?.value;
+    unawaited(
+      showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        showDragHandle: true,
+        backgroundColor: const Color(0xFF071226),
+        builder: (sheetContext) => DemoStepSurface(
+          stepId: stepId,
+          child: FractionallySizedBox(
+            heightFactor: 0.96,
+            child: ValueListenableBuilder<_XiaoyiQaResponse?>(
+              valueListenable: _qaPresentation,
+              builder: (context, response, _) => response == null
+                  ? const SizedBox.shrink()
+                  : _XiaoyiQaStage(
+                      response: response,
+                      snapshot: snapshot,
+                      onClose: () => Navigator.of(sheetContext).pop(),
+                      onOpenTarget: () {
+                        Navigator.of(sheetContext).pop();
+                        widget.onOpenTab(
+                          response.mode == _XiaoyiQaMode.emergency
+                              ? HomeTab.alerts
+                              : HomeTab.situation,
+                        );
+                      },
+                    ),
+            ),
+          ),
+        ),
+      ).whenComplete(() {
+        if (mounted) {
+          setState(() => _qaPresentationOpen = false);
+        }
+      }),
+    );
+  }
+
+  void _revealPanel() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(
+        Scrollable.ensureVisible(
+          context,
+          alignment: 0.03,
+          duration: const Duration(milliseconds: 320),
+          curve: Curves.easeOutCubic,
+        ),
+      );
+    });
   }
 
   Future<void> _executeAction(
@@ -329,7 +571,7 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
               webLinkageMessage: webReceipt.message,
             );
       final elapsed = DateTime.now().difference(startedAt);
-      const minimumVisibleTime = Duration(milliseconds: 720);
+      const minimumVisibleTime = Duration(milliseconds: 220);
       if (elapsed < minimumVisibleTime) {
         await Future<void>.delayed(minimumVisibleTime - elapsed);
       }
@@ -344,13 +586,13 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
         ..clearSnackBars()
         ..showSnackBar(
           SnackBar(
-            content: Text('小懿已执行：${action.label}'),
+            content: Text('舷鸥已执行：${action.label}'),
             duration: const Duration(seconds: 2),
           ),
         );
     } catch (error) {
       final elapsed = DateTime.now().difference(startedAt);
-      const minimumVisibleTime = Duration(milliseconds: 720);
+      const minimumVisibleTime = Duration(milliseconds: 220);
       if (elapsed < minimumVisibleTime) {
         await Future<void>.delayed(minimumVisibleTime - elapsed);
       }
@@ -371,7 +613,7 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
           ..clearSnackBars()
           ..showSnackBar(
             SnackBar(
-              content: Text('小懿联动未完成：$message'),
+              content: Text('舷鸥联动未完成：$message'),
               duration: const Duration(seconds: 3),
             ),
           );
@@ -526,9 +768,9 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
       case XiaoyiLeadershipActionType.startXiaoyi:
         return _resultFor(
           action,
-          detail: '小懿领导联动网关已就绪，当前支持指令识别、页面联动、审批验证和审计留痕。',
+          detail: '舷鸥领导联动网关已就绪，当前支持指令识别、页面联动、审批验证和审计留痕。',
           nextStep: '可直接点击下方任一“执行”，或在输入框发出领导口径指令。',
-          target: '小懿',
+          target: '舷鸥',
           tone: AppBadgeTone.success,
         );
       case XiaoyiLeadershipActionType.askBrief:
@@ -656,7 +898,7 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
       await _executeAction(
         context,
         'linkage_health',
-        command: '小懿，同步强化学习与3D孪生链路',
+        command: '小鸥，同步强化学习与3D孪生链路',
       );
       if (!mounted) return;
       setState(() {
@@ -874,7 +1116,7 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
     auditNotifier.recordEvent(
       source: source,
       actionType: AuditActionType.guidance,
-      stateSummary: '小懿领导联动执行：${action.label}',
+      stateSummary: '舷鸥领导联动执行：${action.label}',
       policySetSummary: result.detail,
       humanChoiceSummary: '领导点击执行：${action.command}',
       payload: <String, Object?>{
@@ -900,7 +1142,7 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
     auditNotifier.recordEvent(
       source: AuditEventSource.executionFeedback,
       actionType: AuditActionType.guidance,
-      stateSummary: '小懿联动未完成：${action.label}',
+      stateSummary: '舷鸥联动未完成：${action.label}',
       policySetSummary: 'Web 共享链路未返回完整回执',
       humanChoiceSummary: '领导点击执行；系统已失效关闭',
       payload: <String, Object?>{
@@ -914,6 +1156,549 @@ class _XiaoyiLeadershipPanelState extends ConsumerState<XiaoyiLeadershipPanel> {
   }
 }
 
+enum _XiaoyiQaMode { general, daily, emergency }
+
+@immutable
+class _XiaoyiQaResponse {
+  const _XiaoyiQaResponse({
+    required this.mode,
+    required this.prompt,
+    required this.text,
+    required this.streaming,
+  });
+  final _XiaoyiQaMode mode;
+  final String prompt;
+  final String text;
+  final bool streaming;
+
+  _XiaoyiQaResponse copyWith({String? text, bool? streaming}) =>
+      _XiaoyiQaResponse(
+        mode: mode,
+        prompt: prompt,
+        text: text ?? this.text,
+        streaming: streaming ?? this.streaming,
+      );
+}
+
+class _XiaoyiQaPrompts extends StatelessWidget {
+  const _XiaoyiQaPrompts({
+    required this.busy,
+    required this.onGeneral,
+    required this.onDaily,
+    required this.onEmergency,
+  });
+  final bool busy;
+  final VoidCallback onGeneral;
+  final VoidCallback onDaily;
+  final VoidCallback onEmergency;
+
+  @override
+  Widget build(BuildContext context) => Wrap(
+    spacing: 6,
+    runSpacing: 6,
+    children: [
+      ActionChip(
+        key: const ValueKey('xiaoyi-qa-general'),
+        avatar: const Icon(Icons.help_outline_rounded, size: 16),
+        label: const Text('一般问答'),
+        onPressed: busy ? null : onGeneral,
+      ),
+      ActionChip(
+        key: const ValueKey('xiaoyi-qa-daily'),
+        avatar: const Icon(Icons.checklist_rounded, size: 16),
+        label: const Text('日常运行'),
+        onPressed: busy ? null : onDaily,
+      ),
+      ActionChip(
+        key: const ValueKey('xiaoyi-qa-emergency'),
+        avatar: const Icon(Icons.emergency_outlined, size: 16),
+        label: const Text('紧急处置'),
+        onPressed: busy ? null : onEmergency,
+      ),
+    ],
+  );
+}
+
+class _XiaoyiCrossSystemReceiptCard extends StatelessWidget {
+  const _XiaoyiCrossSystemReceiptCard({required this.receipt});
+  final XiaoyiCrossSystemReceipt receipt;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      gradient: const LinearGradient(
+        colors: [Color(0xFF0B383A), Color(0xFF102653)],
+      ),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: const Color(0x8876F7C5)),
+      boxShadow: const <BoxShadow>[
+        BoxShadow(color: Color(0x2276F7C5), blurRadius: 20),
+      ],
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(
+              Icons.assignment_turned_in_outlined,
+              color: Color(0xFF76F7C5),
+              size: 19,
+            ),
+            const SizedBox(width: 7),
+            const Expanded(
+              child: Text(
+                '舷鸥已回收跨系统结果凭证',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF76F7C5).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(99),
+              ),
+              child: const Text(
+                '已审计',
+                style: TextStyle(
+                  color: Color(0xFF76F7C5),
+                  fontSize: 8,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 9),
+        _ReceiptLine(label: '任务目标', value: receipt.value('task_goal')),
+        _ReceiptLine(label: '目标系统', value: receipt.value('target_system')),
+        _ReceiptLine(
+          label: '数据集 / 算法',
+          value:
+              '${receipt.value('dataset_version')} / ${receipt.value('algorithm')}',
+        ),
+        _ReceiptLine(label: '参数', value: receipt.value('parameters')),
+        _ReceiptLine(label: '执行状态', value: receipt.value('execution_status')),
+        _ReceiptLine(label: '关键指标', value: receipt.value('key_metrics')),
+        _ReceiptLine(
+          label: '验证结论',
+          value: receipt.value('validation_conclusion'),
+        ),
+        _ReceiptLine(label: 'Trace ID', value: receipt.value('trace_id')),
+        _ReceiptLine(label: '时间戳', value: receipt.value('timestamp')),
+        _ReceiptLine(
+          label: '生产权限',
+          value: receipt.productionAuthority
+              ? '已授权（需核对外部凭证）'
+              : '未授权 · 建议 / Dry-run 边界',
+          warning: receipt.productionAuthority,
+        ),
+        const SizedBox(height: 7),
+        const Text(
+          '舷鸥总结：目标系统已返回可追踪结果。当前结论只适用于公开数据离线训练/回放验证，不得作为生产下发凭证。',
+          style: TextStyle(
+            color: Color(0xFFBDFBE1),
+            fontSize: 10,
+            height: 1.45,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _ReceiptLine extends StatelessWidget {
+  const _ReceiptLine({
+    required this.label,
+    required this.value,
+    this.warning = false,
+  });
+  final String label;
+  final String value;
+  final bool warning;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 4),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 82,
+          child: Text(
+            label,
+            style: const TextStyle(color: Color(0xFF7894BD), fontSize: 9),
+          ),
+        ),
+        Expanded(
+          child: SelectableText(
+            value,
+            style: TextStyle(
+              color: warning
+                  ? const Color(0xFFFFC46B)
+                  : const Color(0xFFE4EEFC),
+              fontSize: 9.5,
+              height: 1.35,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _XiaoyiQaStage extends StatelessWidget {
+  const _XiaoyiQaStage({
+    required this.response,
+    required this.snapshot,
+    required this.onClose,
+    required this.onOpenTarget,
+  });
+
+  final _XiaoyiQaResponse response;
+  final AlertsSnapshot? snapshot;
+  final VoidCallback onClose;
+  final VoidCallback onOpenTarget;
+
+  @override
+  Widget build(BuildContext context) {
+    final emergency = response.mode == _XiaoyiQaMode.emergency;
+    final color = switch (response.mode) {
+      _XiaoyiQaMode.general => const Color(0xFF60A5FA),
+      _XiaoyiQaMode.daily => const Color(0xFF45D69C),
+      _XiaoyiQaMode.emergency => const Color(0xFFFF735F),
+    };
+    final title = switch (response.mode) {
+      _XiaoyiQaMode.general => '业务概念 · 证据解读',
+      _XiaoyiQaMode.daily => '日常运行 · 值班清单',
+      _XiaoyiQaMode.emergency => '紧急处置 · 人工升级',
+    };
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+      children: [
+        TweenAnimationBuilder<double>(
+          key: ValueKey(response.mode),
+          tween: Tween(begin: 0, end: 1),
+          duration: const Duration(milliseconds: 480),
+          curve: Curves.easeOutCubic,
+          builder: (context, value, child) => Opacity(
+            opacity: value,
+            child: Transform.translate(
+              offset: Offset(0, (1 - value) * 18),
+              child: child,
+            ),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  color.withValues(alpha: 0.30),
+                  const Color(0xFF10213D),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: color.withValues(alpha: 0.65)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      emergency
+                          ? Icons.emergency_rounded
+                          : Icons.auto_awesome_rounded,
+                      color: color,
+                      size: 36,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        '舷鸥问答工作台',
+                        style: TextStyle(
+                          color: color,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: '关闭问答',
+                      onPressed: onClose,
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  response.prompt,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    height: 1.5,
+                    color: Color(0xFFD9E7F9),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                LinearProgressIndicator(
+                  value: response.streaming
+                      ? (response.text.isEmpty
+                            ? 0.08
+                            : response.text.split('\n').length / 3)
+                      : 1,
+                  minHeight: 5,
+                  color: color,
+                  backgroundColor: const Color(0xFF071226),
+                ),
+                const SizedBox(height: 7),
+                Text(
+                  response.streaming ? '正在展开处置依据与讲解步骤…' : '讲解已展开 · 可继续核对业务页面',
+                  style: TextStyle(color: color, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        _XiaoyiQaResponseCard(response: response),
+        const SizedBox(height: 14),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFF10213D),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '当前告警上下文',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                snapshot == null
+                    ? '告警快照尚未加载，请到业务页面核对。'
+                    : '活动事件 ${snapshot!.items.length}  ·  高优 ${snapshot!.items.where((item) => item.severity == AlertSeverity.critical).length}  ·  待确认 ${snapshot!.unreadCount}',
+                style: TextStyle(
+                  color: color,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '回答为本地预设讲解示例；上方告警计数读取当前快照。示例不代表已发生现场事故，也不执行设备控制。',
+                style: TextStyle(
+                  fontSize: 11,
+                  height: 1.45,
+                  color: Color(0xFF9DC8F8),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        FilledButton.icon(
+          onPressed: onOpenTarget,
+          icon: Icon(
+            emergency
+                ? Icons.notifications_active_outlined
+                : Icons.radar_rounded,
+          ),
+          label: Text(emergency ? '进入告警中心 · 核对真实事件' : '进入态势页 · 核对运行快照'),
+          style: FilledButton.styleFrom(
+            backgroundColor: color,
+            foregroundColor: const Color(0xFF071226),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _XiaoyiQaResponseCard extends StatelessWidget {
+  const _XiaoyiQaResponseCard({required this.response});
+  final _XiaoyiQaResponse response;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (response.mode) {
+      _XiaoyiQaMode.general => const Color(0xFF60A5FA),
+      _XiaoyiQaMode.daily => const Color(0xFF45D69C),
+      _XiaoyiQaMode.emergency => const Color(0xFFFF735F),
+    };
+    final label = switch (response.mode) {
+      _XiaoyiQaMode.general => '一般问答 · 依据解释',
+      _XiaoyiQaMode.daily => '日常问答 · 执行建议',
+      _XiaoyiQaMode.emergency => '紧急问答 · 高优先级',
+    };
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: 0.1),
+            blurRadius: 18,
+            spreadRadius: -7,
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                response.mode == _XiaoyiQaMode.emergency
+                    ? Icons.warning_amber_rounded
+                    : Icons.auto_awesome_rounded,
+                color: color,
+                size: 18,
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              if (response.streaming)
+                SizedBox.square(
+                  dimension: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: color,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          Text(
+            response.prompt,
+            style: const TextStyle(
+              color: Color(0xFF9DC8F8),
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (response.text.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 18),
+              child: Text(
+                '正在展开预设讲解示例…',
+                style: TextStyle(color: color, fontSize: 14),
+              ),
+            )
+          else
+            for (final (index, paragraph) in response.text.split('\n').indexed)
+              TweenAnimationBuilder<double>(
+                key: ValueKey('${response.mode}-$index'),
+                tween: Tween(begin: 0, end: 1),
+                duration: const Duration(milliseconds: 420),
+                builder: (context, value, child) => Opacity(
+                  opacity: value,
+                  child: Transform.translate(
+                    offset: Offset((1 - value) * 16, 0),
+                    child: child,
+                  ),
+                ),
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(13),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.09),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border(left: BorderSide(color: color, width: 3)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${index + 1}'.padLeft(2, '0'),
+                        style: TextStyle(
+                          color: color,
+                          fontSize: 25,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          paragraph,
+                          style: const TextStyle(
+                            color: Color(0xFFE4EEFC),
+                            fontSize: 14,
+                            height: 1.6,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          const SizedBox(height: 9),
+          Wrap(
+            spacing: 6,
+            runSpacing: 5,
+            children: [
+              _QaEvidenceTag(label: '回答：预设讲解示例', color: color),
+              _QaEvidenceTag(label: '置信：离线验证范围', color: color),
+              _QaEvidenceTag(label: '权限：建议级，无生产控制权', color: color),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QaEvidenceTag extends StatelessWidget {
+  const _QaEvidenceTag({required this.label, required this.color});
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.09),
+      borderRadius: BorderRadius.circular(99),
+      border: Border.all(color: color.withValues(alpha: 0.3)),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(color: color, fontSize: 8, fontWeight: FontWeight.w800),
+    ),
+  );
+}
+
 class _XiaoyiCoreLinkageConsole extends StatefulWidget {
   const _XiaoyiCoreLinkageConsole({
     required this.busy,
@@ -921,6 +1706,8 @@ class _XiaoyiCoreLinkageConsole extends StatefulWidget {
     required this.stageIndex,
     required this.progress,
     required this.stageDetail,
+    required this.rlTaskHighlighted,
+    required this.onRlTask,
     required this.onLinkage,
     required this.onSituation,
     required this.onStrategy,
@@ -933,6 +1720,8 @@ class _XiaoyiCoreLinkageConsole extends StatefulWidget {
   final int stageIndex;
   final double progress;
   final String stageDetail;
+  final bool rlTaskHighlighted;
+  final Future<void> Function() onRlTask;
   final Future<void> Function() onLinkage;
   final VoidCallback onSituation;
   final Future<void> Function() onStrategy;
@@ -954,7 +1743,12 @@ class _XiaoyiCoreLinkageConsoleState extends State<_XiaoyiCoreLinkageConsole>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 3600),
-    )..repeat();
+    );
+    if (RuntimeProfile.reduceAmbientMotion) {
+      _controller.value = 0.32;
+    } else {
+      _controller.repeat();
+    }
   }
 
   @override
@@ -962,7 +1756,7 @@ class _XiaoyiCoreLinkageConsoleState extends State<_XiaoyiCoreLinkageConsole>
     super.didChangeDependencies();
     final reduceMotion =
         MediaQuery.maybeOf(context)?.disableAnimations ?? false;
-    if (reduceMotion) {
+    if (reduceMotion || RuntimeProfile.reduceAmbientMotion) {
       _controller.stop();
       _controller.value = 0.32;
     } else if (!_controller.isAnimating) {
@@ -1074,7 +1868,7 @@ class _XiaoyiCoreLinkageConsoleState extends State<_XiaoyiCoreLinkageConsole>
                       child: Image.asset(
                         'assets/images/xiaoyi_maritime_officer.png',
                         fit: BoxFit.cover,
-                        semanticLabel: '小懿Q版海事训练顾问',
+                        semanticLabel: '舷鸥Q版海事训练顾问',
                       ),
                     ),
                     Positioned(
@@ -1084,7 +1878,7 @@ class _XiaoyiCoreLinkageConsoleState extends State<_XiaoyiCoreLinkageConsole>
                             ? '智能联动中'
                             : widget.completed
                             ? '三端联动已就绪'
-                            : '小懿 · 三端协同',
+                            : '舷鸥 · 三端协同',
                         style: const TextStyle(
                           color: Color(0xFFB8EFFF),
                           fontSize: 11,
@@ -1105,10 +1899,37 @@ class _XiaoyiCoreLinkageConsoleState extends State<_XiaoyiCoreLinkageConsole>
             progress: widget.progress,
             detail: widget.stageDetail,
           ),
+          const SizedBox(height: 10),
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            padding: widget.rlTaskHighlighted
+                ? const EdgeInsets.all(3)
+                : EdgeInsets.zero,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(17),
+              border: widget.rlTaskHighlighted
+                  ? Border.all(color: const Color(0xFF65F5FF), width: 2)
+                  : null,
+              boxShadow: widget.rlTaskHighlighted
+                  ? const <BoxShadow>[
+                      BoxShadow(color: Color(0x5565F5FF), blurRadius: 18),
+                    ]
+                  : null,
+            ),
+            child: IntelligentActionButton(
+              label: '舷鸥下达 RL 训练任务',
+              eyebrow: 'NATURAL LANGUAGE → CONTRACT → HUMAN GATE',
+              busyLabel: '正在识别优化目标',
+              icon: Icons.psychology_alt_outlined,
+              tone: IntelligentActionTone.xiaoyi,
+              compact: true,
+              onPressed: widget.busy ? null : widget.onRlTask,
+            ),
+          ),
           if (widget.completed) ...[
             const SizedBox(height: 10),
             IntelligentActionButton(
-              label: '小懿接力 · 查看港区稳态',
+              label: '舷鸥接力 · 查看港区稳态',
               eyebrow: 'NEXT · SITUATION AWARENESS',
               busyLabel: '正在打开态势总览',
               icon: Icons.arrow_forward_rounded,
@@ -1119,8 +1940,8 @@ class _XiaoyiCoreLinkageConsoleState extends State<_XiaoyiCoreLinkageConsole>
           ],
           const SizedBox(height: 10),
           IntelligentActionButton(
-            label: widget.completed ? '重新同步小懿智能联动' : '启动小懿智能联动',
-            eyebrow: 'XIAOYI COPILOT · RL × 3D TWIN',
+            label: widget.completed ? '重新同步舷鸥智能联动' : '启动舷鸥智能联动',
+            eyebrow: 'GullMate COPILOT · RL × 3D TWIN',
             busyLabel: '正在同步三端状态',
             icon: Icons.auto_awesome_rounded,
             tone: IntelligentActionTone.xiaoyi,
@@ -1152,7 +1973,7 @@ class _XiaoyiCoreLinkageConsoleState extends State<_XiaoyiCoreLinkageConsole>
               Expanded(
                 child: _LinkagePortal(
                   label: '生成简报',
-                  caption: '小懿汇报',
+                  caption: '舷鸥汇报',
                   icon: Icons.summarize_outlined,
                   color: const Color(0xFF76F7C5),
                   onTap: widget.busy ? null : widget.onBrief,
@@ -1343,7 +2164,7 @@ class _XiaoyiActionProgress extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  '小懿正在执行 · ${action?.label ?? '智能联动动作'}',
+                  '舷鸥正在执行 · ${action?.label ?? '智能联动动作'}',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 10,
@@ -1640,7 +2461,7 @@ class _XiaoyiWebStatusStrip extends StatelessWidget {
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
           SizedBox(width: 7),
-          Text('正在核验 Web 共享后端与小懿指令网关'),
+          Text('正在核验 Web 共享后端与舷鸥指令网关'),
         ],
       ),
       error: (error, stackTrace) => AppBadge(
@@ -1664,7 +2485,7 @@ class _XiaoyiWebStatusStrip extends StatelessWidget {
             compact: true,
           ),
           AppBadge(
-            label: value.xiaoyiOnline ? '小懿真实服务在线' : value.xiaoyiLabel,
+            label: value.xiaoyiOnline ? '舷鸥真实服务在线' : value.xiaoyiLabel,
             tone: value.xiaoyiOnline
                 ? AppBadgeTone.success
                 : AppBadgeTone.watch,
@@ -1704,7 +2525,7 @@ class _XiaoyiAnswerCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  state.matchedAction?.label ?? '小懿回应',
+                  state.matchedAction?.label ?? '舷鸥回应',
                   style: theme.textTheme.labelLarge?.copyWith(
                     fontWeight: FontWeight.w900,
                   ),
@@ -1946,7 +2767,7 @@ class _ExecutiveCommandGroups extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '小懿互动功能 / 指令清单',
+          '舷鸥互动功能 / 指令清单',
           style: Theme.of(
             context,
           ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900),
@@ -2222,7 +3043,7 @@ class _XiaoyiSpriteIcon extends StatelessWidget {
       child: Image.asset(
         'assets/images/xiaoyi_maritime_officer.png',
         fit: BoxFit.cover,
-        semanticLabel: '小懿Q版海事训练顾问',
+        semanticLabel: '舷鸥Q版海事训练顾问',
       ),
     );
   }

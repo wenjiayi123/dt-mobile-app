@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:dt_mobile_app/core/network/dio_provider.dart';
+import 'package:dt_mobile_app/core/network/shared_backend_status.dart';
 
 @immutable
 class SharedSystemEvidence {
@@ -21,15 +21,15 @@ class SharedSystemEvidence {
 
   final String backendId;
   final String datasetId;
-  final int testRows;
-  final double berthImprovementPercent;
-  final double berthPointGain;
-  final double waitReductionPercent;
-  final double costReductionPercent;
-  final int workflowOperations;
-  final bool auditChainValid;
-  final double unsafeDispatchBlockPercent;
-  final double duplicateSuppressionPercent;
+  final int? testRows;
+  final double? berthImprovementPercent;
+  final double? berthPointGain;
+  final double? waitReductionPercent;
+  final double? costReductionPercent;
+  final int? workflowOperations;
+  final bool? auditChainValid;
+  final double? unsafeDispatchBlockPercent;
+  final double? duplicateSuppressionPercent;
 
   factory SharedSystemEvidence.fromJson(Map<String, dynamic> json) {
     final frontends = json['frontends'];
@@ -70,7 +70,9 @@ class SharedSystemEvidence {
       ),
       workflowOperations: _int(workflow['operations']),
       auditChainValid:
-          results['audit_chain_valid'] == true && runtimeAudit['valid'] == true,
+          results['audit_chain_valid'] is bool && runtimeAudit['valid'] is bool
+              ? results['audit_chain_valid'] == true && runtimeAudit['valid'] == true
+              : null,
       unsafeDispatchBlockPercent: _double(
         results['unsafe_dispatch_block_percent'],
       ),
@@ -88,23 +90,24 @@ class SharedSystemEvidence {
     return const <String, dynamic>{};
   }
 
-  static int _int(Object? raw) =>
-      raw is num ? raw.toInt() : int.tryParse('$raw') ?? 0;
+  static int? _int(Object? raw) {
+    final value = raw is num ? raw.toDouble() : double.tryParse('$raw');
+    return value != null && value.isFinite && value >= 0 && value == value.truncateToDouble()
+        ? value.toInt() : null;
+  }
 
-  static double _double(Object? raw) =>
-      raw is num ? raw.toDouble() : double.tryParse('$raw') ?? 0;
+  static double? _double(Object? raw) {
+    final value = raw is num ? raw.toDouble() : double.tryParse('$raw');
+    return value != null && value.isFinite ? value : null;
+  }
+
 }
 
-final sharedSystemEvidenceProvider =
-    FutureProvider.autoDispose<SharedSystemEvidence>((ref) async {
-      final response = await ref
-          .read(dioProvider)
-          .get<Object>('/api/mobile/status');
-      final raw = response.data;
-      if (raw is! Map) {
-        throw const FormatException('共享后端状态不是 JSON 对象');
-      }
-      return SharedSystemEvidence.fromJson(
-        raw.map((key, value) => MapEntry(key.toString(), value)),
-      );
-    });
+final sharedSystemEvidenceProvider = FutureProvider<SharedSystemEvidence>((
+  ref,
+) async {
+  final status = await ref
+      .read(sharedBackendStatusRepositoryProvider)
+      .loadStatus();
+  return SharedSystemEvidence.fromJson(status);
+});

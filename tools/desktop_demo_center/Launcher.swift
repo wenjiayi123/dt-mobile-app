@@ -14,11 +14,20 @@ struct LauncherProject {
     let pidID: String?
 }
 
-struct LauncherPIDRecord: Codable {
+private struct LauncherServiceConfig: Decodable {
     let id: String
-    let pid: Int32
-    let signature: String
-    let startedAt: String
+    let workDir: String
+    let processSignature: String
+    let healthURL: String?
+
+    var managedService: ManagedService {
+        ManagedService(id: id, workDir: workDir, processSignature: processSignature, healthURL: healthURL)
+    }
+}
+
+private struct LauncherSystemConfig: Decodable {
+    let services: [LauncherServiceConfig]
+    let external: LauncherServiceConfig?
 }
 
 final class ProjectCardView: NSView {
@@ -107,21 +116,41 @@ final class ProjectCardView: NSView {
 
     required init?(coder: NSCoder) { nil }
 
-    func setOnline(_ online: Bool) {
-        statusDot.layer?.backgroundColor = (online ? NSColor.systemGreen : NSColor.systemGray).cgColor
-        statusLabel.stringValue = online ? "系统在线" : "等待启动"
-        statusLabel.textColor = online ? NSColor.systemGreen : NSColor(calibratedWhite: 0.62, alpha: 1)
-        openButton.title = online ? "切回系统" : "打开系统"
+    func setStatus(serviceOnline: Bool, appRunning: Bool) {
+        let color: NSColor
+        if serviceOnline && appRunning {
+            color = .systemGreen
+            statusLabel.stringValue = "系统在线"
+        } else if serviceOnline {
+            color = .systemOrange
+            statusLabel.stringValue = "后台仍在运行"
+        } else if appRunning {
+            color = .systemOrange
+            statusLabel.stringValue = "窗口已打开 · 服务未就绪"
+        } else {
+            color = .systemGray
+            statusLabel.stringValue = "等待启动"
+        }
+        statusDot.layer?.backgroundColor = color.cgColor
+        statusLabel.textColor = color
+        openButton.title = appRunning ? "切回系统" : "打开系统"
     }
 }
 
-final class LauncherDelegate: NSObject, NSApplicationDelegate {
+final class LauncherDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var window: NSWindow!
     private var cards: [String: ProjectCardView] = [:]
     private var statusTimer: Timer?
     private var openAllButton: NSButton!
+    private var stopAllButton: NSButton!
     private var startAllInProgress = false
     private var startGeneration = 0
+    private var lifecycleGeneration = 0
+    private var statusGeneration = 0
+    private var stopAllInProgress = false
+    private var isTerminating = false
+    private var pendingOpenRequests: Set<UUID> = []
+    private var cancelledOpenApplications: [NSRunningApplication] = []
 
     private let projects: [LauncherProject] = [
         LauncherProject(
@@ -167,17 +196,78 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate {
         return base.appendingPathComponent("港航演示中心/Runtime", isDirectory: true)
     }()
 
+    private lazy var processRuntime = ManagedProcessRuntime(runtimeRoot: runtimeRoot)
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        _ = processRuntime
         buildWindow()
         refreshStatuses()
-        statusTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            self?.refreshStatuses()
-        }
+        startStatusTimer()
         NSApp.activate(ignoringOtherApps: true)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        isTerminating = true
+        startGeneration += 1
+        lifecycleGeneration += 1
+        statusGeneration += 1
+        statusTimer?.invalidate()
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Let a requested stop finish before the controller itself disappears.
+        if stopAllInProgress { return .terminateCancel }
+        if isTerminating { return .terminateLater }
+        if !pendingOpenRequests.isEmpty {
+            isTerminating = true
+            startAllInProgress = false
+            startGeneration += 1
+            lifecycleGeneration += 1
+            statusGeneration += 1
+            statusTimer?.invalidate()
+            openAllButton?.isEnabled = true
+            openAllButton?.title = "全部启动"
+            waitForCancelledOpensBeforeTermination(deadline: Date().addingTimeInterval(12))
+            return .terminateLater
+        }
+        return .terminateNow
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if stopAllInProgress { return false }
+        if !pendingOpenRequests.isEmpty || isTerminating {
+            NSApp.terminate(nil)
+            return false
+        }
+        return true
+    }
+
+    private func waitForCancelledOpensBeforeTermination(deadline: Date) {
+        if pendingOpenRequests.isEmpty && cancelledOpenApplications.allSatisfy({ $0.isTerminated }) {
+            NSApp.reply(toApplicationShouldTerminate: true)
+            return
+        }
+        guard Date() < deadline else {
+            isTerminating = false
+            NSApp.reply(toApplicationShouldTerminate: false)
+            startStatusTimer()
+            showAlert(title: "正在取消打开请求", detail: "仍有系统打开或退出请求尚未结束，请稍后再次退出演示中心。")
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            self?.waitForCancelledOpensBeforeTermination(deadline: deadline)
+        }
+    }
+
+    private func startStatusTimer() {
+        statusTimer?.invalidate()
+        statusTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            self?.refreshStatuses()
+        }
+    }
 
     private func buildWindow() {
         let frame = NSRect(x: 0, y: 0, width: 980, height: 720)
@@ -188,6 +278,7 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate {
             defer: false
         )
         window.title = "港航演示中心"
+        window.delegate = self
         window.minSize = NSSize(width: 850, height: 650)
         window.center()
 
@@ -219,7 +310,8 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate {
         openAll.font = NSFont.systemFont(ofSize: 13, weight: .bold)
         openAll.translatesAutoresizingMaskIntoConstraints = false
 
-        let stopAll = NSButton(title: "全部停止", target: self, action: #selector(stopAllProjects))
+        stopAllButton = NSButton(title: "全部停止", target: self, action: #selector(stopAllProjects))
+        let stopAll = stopAllButton!
         stopAll.bezelStyle = .rounded
         stopAll.bezelColor = NSColor(calibratedRed: 0.58, green: 0.20, blue: 0.24, alpha: 1)
         stopAll.contentTintColor = .white
@@ -289,24 +381,132 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openProject(_ sender: NSButton) {
+        guard !stopAllInProgress, !isTerminating else { return }
         guard let id = sender.identifier?.rawValue, let project = projects.first(where: { $0.id == id }) else { return }
         open(project)
     }
 
     private func open(_ project: LauncherProject) {
+        guard !stopAllInProgress, !isTerminating else { return }
         guard let systemsRoot = Bundle.main.resourceURL?.appendingPathComponent("Systems", isDirectory: true) else { return }
         let appURL = systemsRoot.appendingPathComponent(project.appFile, isDirectory: true)
+        let generation = lifecycleGeneration
+        let requestID = UUID()
+        pendingOpenRequests.insert(requestID)
+
+        let executableURL = appURL.appendingPathComponent("Contents/MacOS/SystemShell")
+        let modifiedAt = try? executableURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        let staleApplications = NSRunningApplication.runningApplications(withBundleIdentifier: project.bundleID)
+            .filter {
+                !$0.isTerminated && requiresFreshApplicationLaunch(
+                    launchDate: $0.launchDate,
+                    executableModifiedAt: modifiedAt
+                )
+            }
+        if !staleApplications.isEmpty {
+            staleApplications.forEach { $0.terminate() }
+            waitForStaleApplicationsToExit(
+                staleApplications,
+                project: project,
+                appURL: appURL,
+                generation: generation,
+                requestID: requestID,
+                deadline: Date().addingTimeInterval(8)
+            )
+            return
+        }
+
+        launchInstalledApplication(
+            project,
+            appURL: appURL,
+            generation: generation,
+            requestID: requestID
+        )
+    }
+
+    private func waitForStaleApplicationsToExit(
+        _ applications: [NSRunningApplication],
+        project: LauncherProject,
+        appURL: URL,
+        generation: Int,
+        requestID: UUID,
+        deadline: Date
+    ) {
+        guard generation == lifecycleGeneration, !stopAllInProgress, !isTerminating else {
+            pendingOpenRequests.remove(requestID)
+            return
+        }
+        if applications.allSatisfy(\.isTerminated) {
+            launchInstalledApplication(
+                project,
+                appURL: appURL,
+                generation: generation,
+                requestID: requestID
+            )
+            return
+        }
+        guard Date() < deadline else {
+            applications.filter { !$0.isTerminated }.forEach { _ = $0.forceTerminate() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+                guard let self else { return }
+                guard applications.allSatisfy(\.isTerminated) else {
+                    self.pendingOpenRequests.remove(requestID)
+                    self.showAlert(
+                        title: "旧版 \(project.name) 未能退出",
+                        detail: "已阻止继续激活旧界面；请再次点击“打开系统”重试。"
+                    )
+                    return
+                }
+                self.launchInstalledApplication(
+                    project,
+                    appURL: appURL,
+                    generation: generation,
+                    requestID: requestID
+                )
+            }
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+            self?.waitForStaleApplicationsToExit(
+                applications,
+                project: project,
+                appURL: appURL,
+                generation: generation,
+                requestID: requestID,
+                deadline: deadline
+            )
+        }
+    }
+
+    private func launchInstalledApplication(
+        _ project: LauncherProject,
+        appURL: URL,
+        generation: Int,
+        requestID: UUID
+    ) {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
-        NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { [weak self] _, error in
-            if let error {
-                DispatchQueue.main.async { self?.showAlert(title: "无法打开 \(project.name)", detail: error.localizedDescription) }
+        NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { [weak self] app, error in
+            DispatchQueue.main.async {
+                guard let self else {
+                    app?.terminate()
+                    return
+                }
+                self.pendingOpenRequests.remove(requestID)
+                guard generation == self.lifecycleGeneration, !self.stopAllInProgress, !self.isTerminating else {
+                    if self.isTerminating, let app { self.cancelledOpenApplications.append(app) }
+                    app?.terminate()
+                    return
+                }
+                if let error {
+                    self.showAlert(title: "无法打开 \(project.name)", detail: error.localizedDescription)
+                }
             }
         }
     }
 
     @objc private func openAllProjects() {
-        guard !startAllInProgress else { return }
+        guard !startAllInProgress, !stopAllInProgress, !isTerminating else { return }
         startAllInProgress = true
         startGeneration += 1
         openAllButton.isEnabled = false
@@ -317,7 +517,7 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startNextProject(order: [String], index: Int, generation: Int, failures: [String]) {
-        guard generation == startGeneration else { return }
+        guard generation == startGeneration, !stopAllInProgress, !isTerminating else { return }
         guard index < order.count else {
             startAllInProgress = false
             openAllButton.isEnabled = true
@@ -347,7 +547,7 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate {
         }
         waitForProject(project, deadline: Date().addingTimeInterval(timeout), generation: generation) { [weak self] online in
             guard let self, generation == self.startGeneration else { return }
-            self.cards[project.id]?.setOnline(online)
+            self.cards[project.id]?.setStatus(serviceOnline: online, appRunning: self.isSystemApplicationRunning(project))
             var nextFailures = failures
             if !online { nextFailures.append(project.name) }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
@@ -389,185 +589,200 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.async { completion(statusOK && identityOK) }
             }.resume()
         } else if let pidID = project.pidID {
-            completion(hasLiveRecordedProcess(id: pidID))
+            let service = loadManagedServices().services.first { $0.id == pidID }
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                let online = service.map { self?.processRuntime.isRunning($0) ?? false } ?? false
+                DispatchQueue.main.async { completion(online) }
+            }
         } else {
             completion(false)
         }
     }
 
-    @objc private func stopAllProjects() {
-        startGeneration += 1
-        startAllInProgress = false
-        openAllButton?.isEnabled = true
-        openAllButton?.title = "全部启动"
+    private func installedSystemURL(_ project: LauncherProject) -> URL? {
+        Bundle.main.resourceURL?
+            .appendingPathComponent("Systems", isDirectory: true)
+            .appendingPathComponent(project.appFile, isDirectory: true)
+    }
 
+    private func runningSystemApplications() -> [NSRunningApplication] {
+        projects.flatMap { project in
+            NSRunningApplication.runningApplications(withBundleIdentifier: project.bundleID)
+                .filter { !$0.isTerminated }
+        }
+    }
+
+    private func isSystemApplicationRunning(_ project: LauncherProject) -> Bool {
+        NSRunningApplication.runningApplications(withBundleIdentifier: project.bundleID)
+            .contains { !$0.isTerminated }
+    }
+
+    private func loadManagedServices() -> (services: [ManagedService], errors: [String]) {
+        var services: [String: ManagedService] = [:]
+        var errors: [String] = []
+        for project in projects {
+            guard let appURL = installedSystemURL(project) else {
+                errors.append("无法定位 \(project.name) 的应用配置")
+                continue
+            }
+            let configURL = appURL.appendingPathComponent("Contents/Resources/system.json")
+            do {
+                let config = try JSONDecoder().decode(LauncherSystemConfig.self, from: Data(contentsOf: configURL))
+                let configured = config.services + (config.external.map { [$0] } ?? [])
+                for item in configured {
+                    let service = item.managedService
+                    if let previous = services[item.id],
+                       previous.workDir != service.workDir || previous.processSignature != service.processSignature
+                        || previous.healthURL != service.healthURL {
+                        errors.append("共享服务 \(item.id) 的配置不一致")
+                        continue
+                    }
+                    services[item.id] = service
+                }
+            } catch {
+                errors.append("\(project.name) 配置读取失败：\(error.localizedDescription)")
+            }
+        }
+        return (services.values.sorted { $0.id < $1.id }, errors)
+    }
+
+    @objc private func stopAllProjects() {
+        guard !stopAllInProgress, !isTerminating else { return }
         let alert = NSAlert()
         alert.messageText = "停止启动器管理的全部系统？"
-        alert.informativeText = "只会停止由本演示中心记录并验证身份的进程，不会关闭其他终端或无关服务。"
+        alert.informativeText = "将先关闭各系统窗口，再停止已登记端口中、工作目录属于对应项目的后台及子进程；不会清理项目目录之外的同端口进程。"
         alert.addButton(withTitle: "全部停止")
         alert.addButton(withTitle: "取消")
         alert.alertStyle = .warning
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
-        let pidDir = runtimeRoot.appendingPathComponent("pids", isDirectory: true)
-        let files = (try? FileManager.default.contentsOfDirectory(at: pidDir, includingPropertiesForKeys: nil)) ?? []
-        let processTable = readProcessTable()
-        var managedRecords: [(file: URL, record: LauncherPIDRecord, pids: Set<Int32>)] = []
-        var snapshots: [Int32: String] = [:]
+        stopAllInProgress = true
+        startAllInProgress = false
+        startGeneration += 1
+        lifecycleGeneration += 1
+        statusGeneration += 1
+        let generation = lifecycleGeneration
+        statusTimer?.invalidate()
+        statusTimer = nil
+        openAllButton.isEnabled = false
+        openAllButton.title = "正在停止…"
+        stopAllButton.isEnabled = false
+        cards.values.forEach { $0.openButton.isEnabled = false }
 
-        for file in files where file.pathExtension == "json" {
-            guard
-                let data = try? Data(contentsOf: file),
-                let record = try? JSONDecoder().decode(LauncherPIDRecord.self, from: data)
-            else {
-                try? FileManager.default.removeItem(at: file)
-                continue
+        // Quiesce each shell before stopping its services. Otherwise its health
+        // monitor can launch a replacement after the process snapshot is taken.
+        let applications = runningSystemApplications()
+        applications.forEach { $0.terminate() }
+        let configured = loadManagedServices()
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            self.waitForSystemApplicationsToExit(
+                deadline: Date().addingTimeInterval(6),
+                generation: generation,
+                requestedPIDs: Set(applications.map(\.processIdentifier))
+            )
+            let result = self.processRuntime.stop(
+                configured.services,
+                recoverProjectListeners: true
+            )
+            // A shell may have refused the first quit because its conservative
+            // per-window stop could not recognize an orphaned wrapper tree.
+            // After the global runtime has released the registered project
+            // ports, ask those known bundle IDs to quit again. If a shell still
+            // does not leave, force-terminate only that registered UI process;
+            // the service processes have already gone through identity checks.
+            self.waitForSystemApplicationsToExit(
+                deadline: Date().addingTimeInterval(3),
+                generation: generation,
+                requestedPIDs: []
+            )
+            DispatchQueue.main.sync {
+                guard generation == self.lifecycleGeneration else { return }
+                self.runningSystemApplications().forEach { _ = $0.forceTerminate() }
             }
-
-            guard isRecordAlive(record) else {
-                try? FileManager.default.removeItem(at: file)
-                continue
+            self.waitForSystemApplicationsToExit(
+                deadline: Date().addingTimeInterval(2),
+                generation: generation,
+                requestedPIDs: []
+            )
+            DispatchQueue.main.async {
+                guard generation == self.lifecycleGeneration else { return }
+                self.finishStopping(result, configurationErrors: configured.errors)
             }
-
-            var pids = descendantPIDs(of: record.pid, in: processTable)
-            pids.insert(record.pid)
-            for pid in pids {
-                let command = (processTable[pid]?.command ?? processCommand(pid: pid))
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                if !command.isEmpty { snapshots[pid] = command }
-            }
-            managedRecords.append((file: file, record: record, pids: pids))
         }
+    }
 
-        // Stop every verified descendant as well as its recorded root. Keeping a
-        // command snapshot prevents PID reuse from ever targeting an unrelated process.
-        for pid in snapshots.keys.sorted(by: >) { _ = Darwin.kill(pid, SIGTERM) }
-        Thread.sleep(forTimeInterval: 1.2)
-
-        var forced = 0
-        for (pid, command) in snapshots where processStillMatches(pid: pid, command: command) {
-            if Darwin.kill(pid, SIGKILL) == 0 { forced += 1 }
-        }
-        if forced > 0 { Thread.sleep(forTimeInterval: 0.25) }
-
-        let remaining = snapshots.filter { processStillMatches(pid: $0.key, command: $0.value) }
-        for item in managedRecords {
-            let recordStillRunning = item.pids.contains { pid in
-                guard let command = snapshots[pid] else { return false }
-                return processStillMatches(pid: pid, command: command)
+    // Runs only on the background stop queue; main-thread snapshots keep UI and
+    // pending NSWorkspace completions synchronized without blocking the UI.
+    private func waitForSystemApplicationsToExit(
+        deadline: Date,
+        generation: Int,
+        requestedPIDs: Set<Int32>
+    ) {
+        var requested = requestedPIDs
+        while Date() < deadline {
+            var settled = false
+            DispatchQueue.main.sync {
+                guard generation == self.lifecycleGeneration else {
+                    settled = true
+                    return
+                }
+                let applications = self.runningSystemApplications()
+                for app in applications where !requested.contains(app.processIdentifier) {
+                    requested.insert(app.processIdentifier)
+                    app.terminate()
+                }
+                settled = applications.isEmpty && self.pendingOpenRequests.isEmpty
             }
-            if !recordStillRunning { try? FileManager.default.removeItem(at: item.file) }
+            if settled { return }
+            Thread.sleep(forTimeInterval: 0.15)
         }
+    }
 
-        for project in projects {
-            for app in NSRunningApplication.runningApplications(withBundleIdentifier: project.bundleID) {
-                app.terminate()
-            }
-        }
+    private func finishStopping(_ result: ManagedStopResult, configurationErrors: [String]) {
+        let remainingApplications = runningSystemApplications()
+        let errors = configurationErrors + result.errors
+        let complete = result.remaining == 0 && result.remainingPorts.isEmpty
+            && remainingApplications.isEmpty && pendingOpenRequests.isEmpty && errors.isEmpty
+        stopAllInProgress = false
+        openAllButton.isEnabled = true
+        openAllButton.title = "全部启动"
+        stopAllButton.isEnabled = true
+        cards.values.forEach { $0.openButton.isEnabled = true }
+        startStatusTimer()
+        refreshStatuses()
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { [weak self] in self?.refreshStatuses() }
-        if remaining.isEmpty {
+        if complete {
             showAlert(
                 title: "全部系统已真实停止",
-                detail: "已核验 \(managedRecords.count) 个系统记录，并确认 \(snapshots.count) 个后台及子进程均已退出。\(forced > 0 ? "其中 \(forced) 个进程在超时后已强制结束。" : "")"
+                detail: "已核验全部系统配置，停止 \(result.stopped) 个后台及子进程；系统窗口均已退出，目标端口无残留监听。"
             )
         } else {
-            showAlert(
-                title: "有进程未能停止",
-                detail: "为避免误杀其他程序，已保留 \(remaining.count) 个未通过最终身份核验的进程记录，请查看运行日志。"
-            )
+            var details = ["未确认退出的后台进程：\(result.remaining)，系统窗口：\(remainingApplications.count)，待完成打开请求：\(pendingOpenRequests.count)。"]
+            if !result.remainingPorts.isEmpty {
+                details.append("仍在监听的端口：\(result.remainingPorts.map(String.init).joined(separator: "、"))。")
+            }
+            if !errors.isEmpty { details.append(errors.joined(separator: "\n")) }
+            showAlert(title: "部分系统尚未完全停止", detail: details.joined(separator: "\n"))
         }
     }
 
     @objc private func refreshButtonPressed() { refreshStatuses() }
 
     private func refreshStatuses() {
+        guard !stopAllInProgress, !isTerminating else { return }
+        statusGeneration += 1
+        let generation = statusGeneration
         for project in projects {
-            if let healthURL = project.healthURL, let url = URL(string: healthURL) {
-                var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData, timeoutInterval: 1.2)
-                request.setValue("PortDemoLauncher/1.0", forHTTPHeaderField: "User-Agent")
-                URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
-                    let http = response as? HTTPURLResponse
-                    let statusOK = http.map { (200..<300).contains($0.statusCode) } ?? false
-                    let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
-                    let identityOK = project.healthContains.map { body.contains($0) } ?? true
-                    DispatchQueue.main.async { self?.cards[project.id]?.setOnline(statusOK && identityOK) }
-                }.resume()
-            } else if let pidID = project.pidID {
-                cards[project.id]?.setOnline(hasLiveRecordedProcess(id: pidID))
+            probeProject(project) { [weak self] online in
+                guard let self, generation == self.statusGeneration,
+                      !self.stopAllInProgress, !self.isTerminating else { return }
+                self.cards[project.id]?.setStatus(
+                    serviceOnline: online,
+                    appRunning: self.isSystemApplicationRunning(project)
+                )
             }
         }
-    }
-
-    private func hasLiveRecordedProcess(id: String) -> Bool {
-        let file = runtimeRoot.appendingPathComponent("pids/\(id).json")
-        guard
-            let data = try? Data(contentsOf: file),
-            let record = try? JSONDecoder().decode(LauncherPIDRecord.self, from: data),
-            isRecordAlive(record)
-        else { return false }
-        return true
-    }
-
-    private func isRecordAlive(_ record: LauncherPIDRecord) -> Bool {
-        guard record.pid > 1, Darwin.kill(record.pid, 0) == 0 else { return false }
-        return processCommand(pid: record.pid).contains(record.signature)
-    }
-
-    private func processCommand(pid: Int32) -> String {
-        let process = Process()
-        let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/bin/ps")
-        process.arguments = ["-p", String(pid), "-o", "command="]
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        do {
-            try process.run()
-            process.waitUntilExit()
-            return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        } catch { return "" }
-    }
-
-    private func processStillMatches(pid: Int32, command: String) -> Bool {
-        guard pid > 1, Darwin.kill(pid, 0) == 0 else { return false }
-        return processCommand(pid: pid).trimmingCharacters(in: .whitespacesAndNewlines)
-            == command.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func readProcessTable() -> [Int32: (parent: Int32, command: String)] {
-        let process = Process()
-        let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/bin/ps")
-        process.arguments = ["-axo", "pid=,ppid=,command="]
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        do {
-            try process.run()
-            // Drain the pipe while `ps` is still producing output. Waiting first
-            // can deadlock once long command lines fill the pipe buffer.
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-            let output = String(data: data, encoding: .utf8) ?? ""
-            var table: [Int32: (parent: Int32, command: String)] = [:]
-            for line in output.split(separator: "\n") {
-                let fields = line.split(maxSplits: 2, whereSeparator: { $0 == " " || $0 == "\t" })
-                guard fields.count == 3, let pid = Int32(fields[0]), let parent = Int32(fields[1]) else { continue }
-                table[pid] = (parent: parent, command: String(fields[2]))
-            }
-            return table
-        } catch { return [:] }
-    }
-
-    private func descendantPIDs(of root: Int32, in table: [Int32: (parent: Int32, command: String)]) -> Set<Int32> {
-        var descendants: Set<Int32> = []
-        var frontier: [Int32] = [root]
-        while let parent = frontier.popLast() {
-            for (pid, entry) in table where entry.parent == parent && !descendants.contains(pid) {
-                descendants.insert(pid)
-                frontier.append(pid)
-            }
-        }
-        return descendants
     }
 
     private func showAlert(title: String, detail: String) {
@@ -579,8 +794,12 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-let application = NSApplication.shared
-let applicationDelegate = LauncherDelegate()
-application.delegate = applicationDelegate
-application.run()
-
+@main
+struct LauncherApplication {
+    static func main() {
+        let application = NSApplication.shared
+        let applicationDelegate = LauncherDelegate()
+        application.delegate = applicationDelegate
+        withExtendedLifetime(applicationDelegate) { application.run() }
+    }
+}

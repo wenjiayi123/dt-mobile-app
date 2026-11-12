@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/dio_provider.dart';
+import '../../../core/platform/same_window_navigation.dart';
+import '../../demo/application/demo_flow_controller.dart';
 import '../domain/shared_rl_contract.dart';
 
 enum RlDesktopTrainingPhase {
@@ -194,6 +196,33 @@ class RlAlgorithmDescriptor {
 }
 
 @immutable
+class RlBenchmarkExperiment {
+  const RlBenchmarkExperiment({
+    required this.id,
+    required this.label,
+    required this.formalRuns,
+    required this.seeds,
+    required this.reward,
+    required this.energyCost,
+    required this.carbonKg,
+    required this.delayIndex,
+    required this.peakKw,
+    required this.guardrailViolationRate,
+  });
+
+  final String id;
+  final String label;
+  final int formalRuns;
+  final List<int> seeds;
+  final double reward;
+  final double energyCost;
+  final double carbonKg;
+  final double delayIndex;
+  final double peakKw;
+  final double guardrailViolationRate;
+}
+
+@immutable
 class RlTrainingState {
   const RlTrainingState({
     this.phase = RlDesktopTrainingPhase.idle,
@@ -241,6 +270,7 @@ class RlTrainingState {
     this.evaluationMetrics = const <String, double>{},
     this.replayFrames = const <Map<String, dynamic>>[],
     this.algorithms = const <RlAlgorithmDescriptor>[],
+    this.benchmarkExperiments = const <RlBenchmarkExperiment>[],
     this.approvedBy,
     this.logs = const <String>[],
     this.errorMessage,
@@ -292,6 +322,7 @@ class RlTrainingState {
   final Map<String, double> evaluationMetrics;
   final List<Map<String, dynamic>> replayFrames;
   final List<RlAlgorithmDescriptor> algorithms;
+  final List<RlBenchmarkExperiment> benchmarkExperiments;
   final String? approvedBy;
   final List<String> logs;
   final String? errorMessage;
@@ -303,7 +334,7 @@ class RlTrainingState {
       desktopLaunchInProgress;
 
   String get configSourceLabel => switch (configSource) {
-    'xiaoyi_recommended' => '小懿推荐参数',
+    'xiaoyi_recommended' => '舷鸥推荐参数',
     'manual' => '人工配置参数',
     'recovered_request' => '已恢复申请参数',
     _ => '系统默认参数',
@@ -377,6 +408,7 @@ class RlTrainingState {
     Map<String, double>? evaluationMetrics,
     List<Map<String, dynamic>>? replayFrames,
     List<RlAlgorithmDescriptor>? algorithms,
+    List<RlBenchmarkExperiment>? benchmarkExperiments,
     Object? approvedBy = _unset,
     List<String>? logs,
     Object? errorMessage = _unset,
@@ -436,6 +468,7 @@ class RlTrainingState {
       evaluationMetrics: evaluationMetrics ?? this.evaluationMetrics,
       replayFrames: replayFrames ?? this.replayFrames,
       algorithms: algorithms ?? this.algorithms,
+      benchmarkExperiments: benchmarkExperiments ?? this.benchmarkExperiments,
       approvedBy: identical(approvedBy, _unset)
           ? this.approvedBy
           : approvedBy as String?,
@@ -459,6 +492,7 @@ class RlTrainingController extends Notifier<RlTrainingState> {
   Timer? _pollTimer;
   bool _polling = false;
   bool _desktopStatusPolling = false;
+  Future<void>? _connectionCheck;
 
   Dio get _dio => ref.read(dioProvider);
 
@@ -510,7 +544,10 @@ class RlTrainingController extends Notifier<RlTrainingState> {
     );
   }
 
-  Future<void> checkConnection() async {
+  Future<void> checkConnection() => _connectionCheck ??=
+      _checkConnection().whenComplete(() => _connectionCheck = null);
+
+  Future<void> _checkConnection() async {
     if (state.isBusy) return;
     final previousPhase = state.phase;
     state = state.copyWith(
@@ -522,19 +559,32 @@ class RlTrainingController extends Notifier<RlTrainingState> {
         connectTimeout: const Duration(seconds: 20),
         receiveTimeout: const Duration(seconds: 20),
       );
-      final capabilitiesResponse = await _dio.get<Object>(
-        '/api/rl/engine/capabilities',
-        options: evidenceOptions,
+      final evidenceResponses = await Future.wait<Response<Object>>(
+        <Future<Response<Object>>>[
+          _dio.get<Object>(
+            '/api/rl/engine/capabilities',
+            options: evidenceOptions,
+          ),
+          _dio.get<Object>(
+            '/api/rl/benchmarks/summary',
+            queryParameters: const <String, Object>{
+              'dataset_id': preferredSharedDatasetId,
+            },
+            options: evidenceOptions,
+          ),
+          _dio.get<Object>('/api/rl/train/status', options: evidenceOptions),
+        ],
       );
-      final benchmarkResponse = await _dio.get<Object>(
-        '/api/rl/benchmarks/summary',
-        queryParameters: const <String, Object>{
-          'dataset_id': preferredSharedDatasetId,
-        },
-        options: evidenceOptions,
-      );
+      final capabilitiesResponse = evidenceResponses[0];
+      final benchmarkResponse = evidenceResponses[1];
+      final latestTrainingResponse = evidenceResponses[2];
       final capabilitiesData = _asMap(capabilitiesResponse.data);
       final benchmarkData = _asMap(benchmarkResponse.data);
+      final latestTrainingWrapper = _asMap(latestTrainingResponse.data);
+      final embeddedLatestStatus = _asMap(latestTrainingWrapper['status']);
+      final latestTrainingStatus = embeddedLatestStatus.isNotEmpty
+          ? embeddedLatestStatus
+          : latestTrainingWrapper;
       final datasets = capabilitiesData['datasets'];
       final datasetData = datasets is List
           ? datasets
@@ -559,6 +609,39 @@ class RlTrainingController extends Notifier<RlTrainingState> {
         for (final item in benchmarkAlgorithms)
           if (item['id'] != null) item['id'].toString(): item,
       };
+      double benchmarkMean(Map<String, dynamic> item, String key) {
+        final metrics = _asMap(item['metrics']);
+        return _toDouble(_asMap(metrics[key])['mean']);
+      }
+
+      final benchmarkExperiments = benchmarkAlgorithms
+          .map(
+            (item) => RlBenchmarkExperiment(
+              id: item['id']?.toString() ?? 'unknown',
+              label:
+                  item['name']?.toString() ??
+                  item['label']?.toString() ??
+                  item['id']?.toString() ??
+                  'unknown',
+              formalRuns: _toInt(item['claim_eligible_runs']),
+              seeds: item['distinct_seeds'] is List
+                  ? (item['distinct_seeds'] as List)
+                        .map(_toInt)
+                        .toList(growable: false)
+                  : const <int>[],
+              reward: benchmarkMean(item, 'reward'),
+              energyCost: benchmarkMean(item, 'energy_cost'),
+              carbonKg: benchmarkMean(item, 'carbon_kg'),
+              delayIndex: benchmarkMean(item, 'delay_index_mean'),
+              peakKw: benchmarkMean(item, 'peak_kw'),
+              guardrailViolationRate: benchmarkMean(
+                item,
+                'guardrail_violation_rate',
+              ),
+            ),
+          )
+          .where((item) => item.formalRuns > 0)
+          .toList(growable: false);
       final rawAlgorithms = capabilitiesData['algorithms'];
       final algorithmItems = rawAlgorithms is List
           ? rawAlgorithms
@@ -656,6 +739,7 @@ class RlTrainingController extends Notifier<RlTrainingState> {
         desktopPanelUrl: desktopStatus.$2,
         desktopLaunchMessage: desktopStatus.$3,
         algorithms: algorithmItems,
+        benchmarkExperiments: benchmarkExperiments,
         datasetId: datasetData['dataset_id']?.toString() ?? '—',
         datasetTitle: datasetData['title']?.toString() ?? '未命名数据登记',
         datasetBoundary: datasetData['warning']?.toString() ?? '未声明数据使用边界',
@@ -686,6 +770,7 @@ class RlTrainingController extends Notifier<RlTrainingState> {
             : '${algorithmItems.length}方法、$environmentVersion 与公开数据指纹已核验，等待提交',
         updatedAt: DateTime.now(),
       );
+      await _restoreLatestHistoricalEvidence(latestTrainingStatus);
       if (state.requestId == null) {
         await _recoverLatestMobileRequest();
       }
@@ -706,6 +791,34 @@ class RlTrainingController extends Notifier<RlTrainingState> {
         updatedAt: DateTime.now(),
       );
     }
+  }
+
+  Future<void> _restoreLatestHistoricalEvidence(
+    Map<String, dynamic> status,
+  ) async {
+    final jobId = status['job_id']?.toString();
+    final datasetId = status['dataset_id']?.toString();
+    if (jobId == null ||
+        jobId.isEmpty ||
+        datasetId != preferredSharedDatasetId) {
+      return;
+    }
+    state = state.copyWith(
+      jobId: jobId,
+      stage: '已载入最近一次同数据集真实训练快照',
+      logs: _prependLog('历史训练证据已载入 · $jobId'),
+      updatedAt: DateTime.now(),
+    );
+    _applyTrainingStatus(status);
+    await _refreshHistory(jobId);
+  }
+
+  Future<void> ensureHistoricalReplay() async {
+    if (state.renderReady && state.replayFrames.isNotEmpty) return;
+    if (state.jobId == null) await checkConnection();
+    final jobId = state.jobId;
+    if (jobId == null || jobId.isEmpty) return;
+    await _refreshReplay(jobId);
   }
 
   Future<void> _recoverLatestMobileRequest() async {
@@ -782,7 +895,23 @@ class RlTrainingController extends Notifier<RlTrainingState> {
       updatedAt: DateTime.now(),
     );
     try {
-      final response = await _dio.post<Object>('/api/rl/desktop/launch');
+      final resume = await ref
+          .read(demoFlowProvider.notifier)
+          .checkpointForExternalNavigation();
+      final returnUrl = currentAppReturnUrl(resumeParameters: resume);
+      final guideTraceId = ref.read(demoFlowProvider).traceId;
+      final response = await _dio.post<Object>(
+        '/api/rl/desktop/launch',
+        data: <String, Object?>{
+          'same_window': kIsWeb,
+          'return_to': returnUrl,
+          'action': 'review_mobile_request',
+          'request_id': state.requestId,
+          'trace_id': guideTraceId.isEmpty
+              ? 'PORTAI-${DateTime.now().millisecondsSinceEpoch}'
+              : guideTraceId,
+        },
+      );
       final data = _asMap(response.data);
       final launched = data['launched'] == true;
       final url = data['url']?.toString() ?? state.desktopPanelUrl;
@@ -795,6 +924,12 @@ class RlTrainingController extends Notifier<RlTrainingState> {
         logs: _prependLog('POST /api/rl/desktop/launch · 桌面端启动命令已发送'),
         updatedAt: DateTime.now(),
       );
+      if (kIsWeb && launched) {
+        final launchUrl = data['launch_url']?.toString() ?? url;
+        await ref.read(demoFlowProvider.notifier).markExternalNavigationPending();
+        navigateSameWindow(launchUrl);
+        return true;
+      }
       for (var attempt = 0; attempt < 8; attempt++) {
         await Future<void>.delayed(const Duration(milliseconds: 650));
         await refreshDesktopPanelStatus();
@@ -812,6 +947,36 @@ class RlTrainingController extends Notifier<RlTrainingState> {
     } finally {
       state = state.copyWith(desktopLaunchInProgress: false);
     }
+  }
+
+  Future<bool> runGuidedDesktopHandoff() async {
+    if (state.desktopLaunchInProgress) return false;
+
+    if (!state.sharedContractVerified) {
+      await checkConnection();
+    }
+    if (!state.sharedContractVerified) return false;
+
+    if (state.configSource == 'default') {
+      applyXiaoyiRecommendedConfig();
+    }
+
+    final hasReusableRequest =
+        state.hasRequest &&
+        state.phase != RlDesktopTrainingPhase.rejected &&
+        state.phase != RlDesktopTrainingPhase.failed;
+    if (!hasReusableRequest) {
+      final submitted = await submitTrainingRequest();
+      if (!submitted || !state.hasRequest) return false;
+    }
+
+    state = state.copyWith(
+      stage: '手机任务已封装，正在切换到电脑端人工审批',
+      desktopLaunchMessage: '正在打开 Web RL 审批页并定位本次任务…',
+      logs: _prependLog('双端接力 · 任务 ${state.requestId} 已下发，等待电脑端人工批准'),
+      updatedAt: DateTime.now(),
+    );
+    return launchDesktopPanel();
   }
 
   Future<void> refreshDesktopPanelStatus() async {
@@ -1081,6 +1246,16 @@ class RlTrainingController extends Notifier<RlTrainingState> {
     final evaluationMetrics = <String, double>{
       for (final entry in aggregate.entries)
         if (entry.value is num) entry.key: (entry.value as num).toDouble(),
+      for (final key in const <String>[
+        'actor_loss',
+        'critic_loss',
+        'policy_gradient_loss',
+        'value_loss',
+        'entropy_loss',
+        'guardrail_violation_rate',
+        'success_rate',
+      ])
+        if (metrics[key] is num) key: (metrics[key] as num).toDouble(),
     };
     final incomingLogs = status['logs'] is List
         ? (status['logs'] as List)

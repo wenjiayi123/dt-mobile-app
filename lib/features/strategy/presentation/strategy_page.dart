@@ -16,7 +16,7 @@ class StrategyPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final strategyState = ref.watch(strategyControllerProvider);
     final auditTimeline = ref.watch(auditTimelineProvider);
-    final demoFlow = ref.watch(demoFlowProvider);
+    final demoFlow = ref.read(demoFlowProvider);
 
     final latestSubmissionAudit = _findAuditByRequestId(
       auditTimeline.items,
@@ -65,9 +65,14 @@ class StrategyPage extends ConsumerWidget {
     } else {
       final focusCandidate = _resolveFocusCandidate(strategyState);
       body = ListView(
+        // Keep the RL evidence console mounted even when the presenter is at
+        // the top of this long page. Demo actions are event-driven, so they
+        // must not depend on whether ListView has lazily built an off-screen
+        // child yet.
+        cacheExtent: 2400,
         padding: const EdgeInsets.all(16),
         children: [
-          if (demoFlow.isRunning) ...[
+          if (demoFlow.legacyStageCardsEnabled && demoFlow.isRunning) ...[
             _StrategyDemoBanner(
               flow: demoFlow,
               state: strategyState,
@@ -82,7 +87,7 @@ class StrategyPage extends ConsumerWidget {
             state: strategyState,
             focusCandidate: focusCandidate,
             onRun: (testedCandidate) async {
-              if (demoFlow.isRunning) {
+              if (ref.read(demoFlowProvider).isRunning) {
                 ref
                     .read(demoFlowProvider.notifier)
                     .setStage(DemoFlowStage.strategy);
@@ -419,7 +424,7 @@ class _StrategyDemoBanner extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  '小懿联动 · ${flow.stage.timeLabel} · ${flow.stage.shortLabel}',
+                  '舷鸥联动 · ${flow.stage.timeLabel} · ${flow.stage.shortLabel}',
                   style: const TextStyle(fontWeight: FontWeight.w900),
                 ),
               ),

@@ -719,7 +719,15 @@ class StrategyController extends Notifier<StrategyControllerState> {
     await refreshCandidates(silent: true);
   }
 
-  Future<void> refreshCandidates({bool silent = false}) async {
+  Future<void>? _pendingCandidatesRefresh;
+
+  Future<void> refreshCandidates({bool silent = false}) {
+    return _pendingCandidatesRefresh ??= _refreshCandidates(
+      silent: silent,
+    ).whenComplete(() => _pendingCandidatesRefresh = null);
+  }
+
+  Future<void> _refreshCandidates({required bool silent}) async {
     final previous = state;
 
     state = state.copyWith(
@@ -735,7 +743,7 @@ class StrategyController extends Notifier<StrategyControllerState> {
         previousLatestSelectedId: previous.latestSelectedPolicyId,
       );
 
-      await _writeCachedCandidates(candidates);
+      unawaited(_writeCachedCandidates(candidates));
 
       if (_disposed) return;
 

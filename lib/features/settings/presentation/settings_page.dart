@@ -72,10 +72,16 @@ class SettingsPage extends ConsumerWidget {
                 subtitle: '$environmentLabel · $transportLabel',
               ),
               const Divider(height: 1),
+              _StaticInfoTile(
+                leading: Icons.api_outlined,
+                title: '共享接口',
+                subtitle: 'API  $baseUrl\nWS   $wsUrl',
+              ),
+              const Divider(height: 1),
               const _StaticInfoTile(
                 leading: Icons.security_outlined,
-                title: '安全',
-                subtitle: '凭证信息仅展示脱敏摘要',
+                title: '安全与生产权限',
+                subtitle: '凭证仅展示脱敏摘要 · 生产控制权关闭',
               ),
             ],
           ),
@@ -147,9 +153,9 @@ class _DeveloperSection extends StatelessWidget {
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             secondary: const Icon(Icons.layers_outlined),
-            title: const Text('界面讲解流程'),
+            title: const Text('PortAI 演示控制台'),
             subtitle: Text(
-              demoFlowEnabled ? '已启用 · 只改变导航提示，不生成业务数据' : '已关闭 · 不显示讲解步骤',
+              demoFlowEnabled ? '已启用 · 演示按钮与页面真实操作同步' : '已关闭 · 可从页面右上角重新开始',
             ),
             value: demoFlowEnabled,
             onChanged: onDemoModeChanged,

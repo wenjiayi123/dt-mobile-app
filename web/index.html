@@ -33,6 +33,15 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
-  <script src="flutter_bootstrap.js" async></script>
+  <script>
+    // Bootstrap contains the generated main bundle version. Revalidate it on
+    // each opening so local rebuilds cannot keep an older guide in HTTP cache.
+    const bootstrap = document.createElement('script');
+    const bootstrapUrl = new URL('flutter_bootstrap.js', document.baseURI);
+    bootstrapUrl.searchParams.set('build', Date.now().toString());
+    bootstrap.src = bootstrapUrl.toString();
+    bootstrap.async = true;
+    document.body.appendChild(bootstrap);
+  </script>
 </body>
 </html>

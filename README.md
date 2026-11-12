@@ -160,12 +160,12 @@ Connecting another port does not require rewriting the algorithm layer:
 独立 AIS 实验室仍可按 [`port_traffic_timeseries_v1`](docs/DATASET_CONTRACT.md) 与 [`scripts/import_noaa_ais.py`](scripts/import_noaa_ais.py) 复现实验；它不替代共享后端的 `port_ops_v2` 生产接入合同。TOS、ECS、VTS 或现场遥测仍需港口专属适配、标定和独立验收，不能靠字段改名获得生产可信度。<br>
 [`scripts/import_noaa_ais.py`](scripts/import_noaa_ais.py) is the public-AIS conversion reference. TOS, ECS, VTS, and site telemetry still require port-specific adaptation, calibration, and independent acceptance; renaming fields cannot create production credibility.
 
-### 小懿全系统助手 / Xiaoyi system assistant
+### 舷鸥全系统助手 / GullMate system assistant
 
-![小懿Q版形象与按钮联动](docs/assets/mobile-xiaoyi-action-linkage-v2.jpg)
+![舷鸥Q版形象与按钮联动](docs/assets/mobile-xiaoyi-action-linkage-v2.jpg)
 
-移动端使用与 Web 同源的小懿 Q 版海事形象。指令判断、执行按钮、页面跳转、策略审阅和审计记录均调用现有控制器；小懿不绕过人工确认或生产门禁。<br>
-Mobile uses the same Q-version maritime Xiaoyi asset as Web. Command review, execution buttons, navigation, policy review, and audit logging invoke existing controllers; Xiaoyi never bypasses human confirmation or production gates.
+移动端使用与 Web 同源的舷鸥 Q 版海事形象。指令判断、执行按钮、页面跳转、策略审阅和审计记录均调用现有控制器；舷鸥不绕过人工确认或生产门禁。<br>
+Mobile uses the same Q-version maritime GullMate asset as Web. Command review, execution buttons, navigation, policy review, and audit logging invoke existing controllers; GullMate never bypasses human confirmation or production gates.
 
 ### 快速开始 / Quick start
 

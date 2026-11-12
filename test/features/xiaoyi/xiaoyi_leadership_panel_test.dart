@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:dt_mobile_app/features/alerts/application/alerts_controller.dart';
 import 'package:dt_mobile_app/features/audit/application/audit_controller.dart';
+import 'package:dt_mobile_app/features/demo/application/demo_flow_controller.dart';
 import 'package:dt_mobile_app/features/home/application/home_tab_notifier.dart';
 import 'package:dt_mobile_app/features/strategy/application/strategy_controller.dart';
 import 'package:dt_mobile_app/features/xiaoyi/presentation/xiaoyi_leadership_panel.dart';
@@ -40,15 +41,16 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('小懿决策助手'), findsOneWidget);
+    expect(find.text('舷鸥 · GullMate'), findsOneWidget);
+    expect(find.text('你好，我是小鸥。'), findsOneWidget);
     expect(find.text('生成简报'), findsOneWidget);
     expect(find.text('查看策略'), findsOneWidget);
-    expect(find.text('小懿互动功能 / 指令清单'), findsNothing);
+    expect(find.text('舷鸥互动功能 / 指令清单'), findsNothing);
 
     await tester.tap(find.text('展开'));
     await tester.pumpAndSettle();
 
-    expect(find.text('小懿互动功能 / 指令清单'), findsOneWidget);
+    expect(find.text('舷鸥互动功能 / 指令清单'), findsOneWidget);
     expect(find.text('AI决策面板'), findsOneWidget);
     expect(find.text('领导研判'), findsOneWidget);
     expect(find.text('指令联动'), findsOneWidget);
@@ -113,6 +115,74 @@ void main() {
     expect(find.textContaining('健康检查完成'), findsOneWidget);
     expect(find.text('审计留痕 1'), findsOneWidget);
   });
+
+  testWidgets(
+    'guide QA action reveals the panel and streams a visible answer',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            auditUploadEnabledProvider.overrideWithValue(false),
+            alertsSnapshotProvider.overrideWith(
+              _FakeAlertsSnapshotNotifier.new,
+            ),
+            strategyControllerProvider.overrideWith(
+              _FakeStrategyController.new,
+            ),
+            xiaoyiWebLinkageStatusProvider.overrideWith(
+              (ref) async => _verifiedWebStatus,
+            ),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    const SizedBox(height: 820),
+                    XiaoyiLeadershipPanel(onOpenTab: (_) {}),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(XiaoyiLeadershipPanel)),
+      );
+      final demo = container.read(demoFlowProvider.notifier);
+      demo.restart();
+      demo.registerAction('open-dashboard', () {});
+      demo.jumpToStep(
+        portAiDemoSteps.indexWhere((step) => step.id == 'general-qa'),
+      );
+
+      final run = demo.triggerAction('xiaoyi-qa-general');
+      for (var frame = 0; frame < 16; frame++) {
+        await tester.pump(const Duration(milliseconds: 120));
+      }
+      await run;
+      await tester.pump();
+
+      final answerSheet = find.byType(BottomSheet);
+      final modeLabel = find.descendant(of: answerSheet, matching: find.text('一般问答 · 依据解释'));
+      expect(modeLabel, findsOneWidget);
+      expect(find.descendant(of: answerSheet, matching: find.textContaining('策略压力是对作业拥堵')), findsOneWidget);
+      expect(
+        container.read(demoFlowProvider).stepStatus,
+        DemoStepStatus.resultReady,
+      );
+      expect(
+        tester.getTopLeft(modeLabel).dy,
+        lessThan(760),
+        reason: '引导点击后应把舷鸥回答滚动到当前移动端视区。',
+      );
+    },
+  );
 }
 
 class _FakeAlertsSnapshotNotifier extends AlertsSnapshotNotifier {
@@ -136,7 +206,7 @@ final _verifiedWebStatus = XiaoyiWebLinkageStatus(
   rlInterfaceOnline: true,
   assistantGatewayAvailable: true,
   xiaoyiOnline: false,
-  xiaoyiLabel: '小懿未在线 · 后端证据兜底',
+  xiaoyiLabel: '舷鸥未在线 · 后端证据兜底',
   auditChainValid: true,
   checkedAt: DateTime.utc(2026, 8, 14),
 );

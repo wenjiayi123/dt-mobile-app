@@ -17,7 +17,7 @@
 | 执行 | 移动表态与南向执行分离 | 移动接口固定 dry-run；生产动作只能进入共享后端双人门禁 |
 | 审计 | 本地缓存 + 服务器原子证据与 SHA-256 前向链 | 500项基准中300条事件链全部通过；生产仍应接不可变日志/签名系统 |
 | 回放复盘 | 相邻审计记录与真实提交/回执快照 | 只展示记录顺序和差异，不把相邻记录归因为干预效果 |
-| 小懿协同 | `GET /api/rl/integration/health` + `POST /api/assistant/actions/execute` | 页面导航保留本地可用性；跨端动作必须显示 Web dry-run 回执，真实小懿离线时明确显示后端证据兜底 |
+| 舷鸥协同 | `GET /api/rl/integration/health` + `POST /api/assistant/actions/execute` | 页面导航保留本地可用性；跨端动作必须显示 Web dry-run 回执，真实舷鸥离线时明确显示后端证据兜底 |
 | 图片资产 | Flutter Material 图标 | 已移除来源不明的 PNG |
 | 访问凭证 | 运行期内存 + Dio 请求头 | 只标记“已配置、未验证”；服务器 2xx/鉴权响应才是有效性证据，不持久化私密 token |
 | API 边界 | 可选 API key + 请求体/参数上限 | 研究模式可关闭；live/production 强制 32+ 字符 key 和非通配 CORS |

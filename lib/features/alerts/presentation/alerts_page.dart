@@ -14,7 +14,7 @@ class AlertsPage extends ConsumerWidget {
     final snapshotAsync = ref.watch(alertsSnapshotProvider);
     final replanState = ref.watch(quickReplanProvider);
     final strategyState = ref.watch(strategyControllerProvider);
-    final demoFlow = ref.watch(demoFlowProvider);
+    final demoFlow = ref.read(demoFlowProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('告警管理')),
@@ -32,7 +32,9 @@ class AlertsPage extends ConsumerWidget {
         data: (snapshot) {
           final items = snapshot.items;
           final topPriority = items.isEmpty ? null : items.first;
-          final recommendedTitle = strategyState.recommendedCandidate.title;
+          final recommendedTitle = strategyState.candidates.isEmpty
+              ? '等待后端策略候选'
+              : strategyState.recommendedCandidate.title;
 
           return RefreshIndicator(
             onRefresh: () =>
@@ -43,7 +45,7 @@ class AlertsPage extends ConsumerWidget {
               children: [
                 _OverviewCard(snapshot: snapshot),
                 const SizedBox(height: 12),
-                if (demoFlow.enabled) ...[
+                if (demoFlow.legacyStageCardsEnabled) ...[
                   _AlertsDemoBanner(
                     flow: demoFlow,
                     onPrimary: () {
@@ -250,21 +252,159 @@ class _OverviewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
+    final critical = snapshot.items
+        .where((item) => item.severity == AlertSeverity.critical)
+        .length;
+    final warn = snapshot.items
+        .where((item) => item.severity == AlertSeverity.warn)
+        .length;
+    final info = snapshot.items
+        .where((item) => item.severity == AlertSeverity.info)
+        .length;
+    final accent = critical > 0
+        ? const Color(0xFFFF735F)
+        : warn > 0
+        ? const Color(0xFFFFC46B)
+        : const Color(0xFF76F7C5);
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 620),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, child) => Opacity(
+        opacity: value,
+        child: Transform.translate(
+          offset: Offset(0, (1 - value) * 20),
+          child: child,
+        ),
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              accent.withValues(alpha: 0.20),
+              const Color(0xFF10213D),
+              const Color(0xFF071226),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: accent.withValues(alpha: 0.5)),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('告警概览', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(Icons.radar_rounded, color: accent, size: 32),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '风险识别与处置',
+                        style: TextStyle(
+                          fontSize: 21,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      SizedBox(height: 3),
+                      Text(
+                        '优先级分层 · 人工确认 · 回执追踪',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF9DC8F8),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
             Text(
               _headline(snapshot),
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+              style: TextStyle(
+                color: accent,
+                fontSize: 17,
+                height: 1.35,
+                fontWeight: FontWeight.w800,
+              ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _RiskMetric(
+                    label: '高优风险',
+                    count: critical,
+                    color: const Color(0xFFFF735F),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _RiskMetric(
+                    label: '关注事件',
+                    count: warn,
+                    color: const Color(0xFFFFC46B),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _RiskMetric(
+                    label: '信息提示',
+                    count: info,
+                    color: const Color(0xFF60A5FA),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              '处置路径',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 9),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final (index, label) in [
+                  '识别风险',
+                  '研判策略',
+                  '人工确认',
+                  '审计回执',
+                ].indexed)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${index + 1}  $label',
+                      style: TextStyle(
+                        color: accent,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 14),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -275,6 +415,17 @@ class _OverviewCard extends StatelessWidget {
                 if (snapshot.items.isNotEmpty)
                   _TagChip(label: '最新 ${snapshot.items.first.source}'),
               ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              snapshot.items.isEmpty
+                  ? '当前快照无活动事件，保留空态。风险分级与处置路径不表示已触发真实生产告警。'
+                  : '分级计数来自当前事件快照。请在下方核对事件来源与时间，处置操作保留人工确认。',
+              style: const TextStyle(
+                color: Color(0xFF9DC8F8),
+                fontSize: 11,
+                height: 1.45,
+              ),
             ),
           ],
         ),
@@ -299,6 +450,54 @@ class _OverviewCard extends StatelessWidget {
     }
     return '当前以信息事件为主，系统保持运行。';
   }
+}
+
+class _RiskMetric extends StatelessWidget {
+  const _RiskMetric({
+    required this.label,
+    required this.count,
+    required this.color,
+  });
+  final String label;
+  final int count;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+    decoration: BoxDecoration(
+      color: const Color(0xFF071226),
+      borderRadius: BorderRadius.circular(15),
+      border: Border.all(color: color.withValues(alpha: 0.35)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            color: color,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 5),
+        TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: count.toDouble()),
+          duration: const Duration(milliseconds: 650),
+          builder: (context, value, _) => Text(
+            '${value.round()}',
+            style: const TextStyle(
+              fontSize: 34,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+              height: 1.1,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _PrimaryActionCard extends StatelessWidget {

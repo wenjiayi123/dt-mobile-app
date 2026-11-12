@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'package:dio/dio.dart';
+import 'package:dt_mobile_app/core/network/dio_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -8,6 +11,54 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('SituationController refresh', () {
+    test(
+      'initial load and repeated refresh share one pending request',
+      () async {
+        SharedPreferences.setMockInitialValues({});
+        final dio = Dio();
+        final started = Completer<void>();
+        final response = Completer<void>();
+        var requests = 0;
+        dio.interceptors.add(
+          InterceptorsWrapper(
+            onRequest: (options, handler) async {
+              requests++;
+              if (!started.isCompleted) started.complete();
+              await response.future;
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  data: {
+                    'trendPoints': [1.0, 2.0],
+                    'summaryText': 'verified response',
+                    'live_data_verified': false,
+                  },
+                ),
+              );
+            },
+          ),
+        );
+        final container = ProviderContainer(
+          overrides: [dioProvider.overrideWithValue(dio)],
+        );
+        addTearDown(container.dispose);
+        final initial = container.read(situationProvider.future);
+        await started.future;
+        final controller = container.read(situationProvider.notifier);
+        final refreshes = List.generate(5, (_) => controller.refreshNow());
+        response.complete();
+        await initial;
+        await Future.wait(refreshes);
+        expect(requests, 1);
+        expect(
+          container.read(situationProvider).requireValue.summaryText,
+          'verified response',
+        );
+        await controller.refreshNow();
+        expect(requests, 2);
+      },
+    );
+
     test('refreshNow keeps a usable snapshot when next fetch fails', () async {
       SharedPreferences.setMockInitialValues({
         'cache.situation.latest.v1': '''

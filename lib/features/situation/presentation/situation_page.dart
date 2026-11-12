@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dt_mobile_app/shared/ui/app_card.dart';
 import 'package:dt_mobile_app/shared/ui/intelligent_action_button.dart';
 
 import '../../demo/application/demo_flow_controller.dart';
+import '../../demo/presentation/demo_action_target.dart';
 import '../../home/application/home_tab_notifier.dart';
 import '../application/situation_controller.dart';
 import 'twin_3d_screen.dart';
@@ -14,7 +17,7 @@ class SituationPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final situationAsync = ref.watch(situationProvider);
-    final demoFlow = ref.watch(demoFlowProvider);
+    final demoFlow = ref.read(demoFlowProvider);
 
     return RefreshIndicator(
       onRefresh: () => ref.read(situationProvider.notifier).refreshNow(),
@@ -29,16 +32,21 @@ class SituationPage extends ConsumerWidget {
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
               ),
-              IconButton(
-                tooltip: '刷新态势',
-                onPressed: () =>
+              DemoActionTarget(
+                actionId: 'situation-refresh',
+                onAction: () =>
                     ref.read(situationProvider.notifier).refreshNow(),
-                icon: const Icon(Icons.refresh),
+                highlightRadius: 14,
+                builder: (context, onPressed) => IconButton(
+                  tooltip: '刷新态势',
+                  onPressed: onPressed,
+                  icon: const Icon(Icons.refresh),
+                ),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          if (demoFlow.enabled) ...[
+          if (demoFlow.legacyStageCardsEnabled) ...[
             _SituationDemoBanner(
               flow: demoFlow,
               onRestart: () => ref.read(demoFlowProvider.notifier).restart(),
@@ -351,18 +359,28 @@ class _Twin3dEntryCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          IntelligentActionButton(
-            label: '进入 3D 孪生屏',
-            eyebrow: 'PORT-DT TWIN · 双端同源',
-            icon: Icons.view_in_ar_rounded,
-            tone: IntelligentActionTone.twin,
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => Twin3DScreen(snapshot: snapshot),
+          DemoActionTarget(
+            actionId: 'open-twin-3d',
+            // A route push returns a Future that completes only when the page is
+            // popped.  The demo action is complete as soon as the native twin
+            // screen is opened, so do not hold the guide in a running state for
+            // the lifetime of that route.
+            onAction: () {
+              unawaited(
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => Twin3DScreen(snapshot: snapshot),
+                  ),
                 ),
               );
             },
+            builder: (context, onPressed) => IntelligentActionButton(
+              label: '进入 3D 孪生屏',
+              eyebrow: 'PORT-DT TWIN · 双端同源',
+              icon: Icons.view_in_ar_rounded,
+              tone: IntelligentActionTone.twin,
+              onPressed: onPressed,
+            ),
           ),
         ],
       ),
@@ -985,7 +1003,9 @@ class _PlaceholderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(child: SizedBox(height: height));
+    return AppCard(
+      child: SizedBox(width: double.infinity, height: height),
+    );
   }
 }
 

@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../audit/application/audit_controller.dart';
 import '../../demo/application/demo_flow_controller.dart';
+import '../../demo/presentation/demo_action_target.dart';
+import '../../demo/presentation/demo_guide_overlay.dart';
 import '../../home/application/home_tab_notifier.dart';
 import '../application/rl_training_controller.dart';
 import '../domain/shared_rl_contract.dart';
@@ -30,13 +34,15 @@ class _RlTrainingLinkageCardState extends ConsumerState<RlTrainingLinkageCard> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(rlTrainingProvider);
-    final demoStage = ref.watch(demoFlowProvider.select((flow) => flow.stage));
+    final demoFlow = ref.read(demoFlowProvider);
+    final demoStage = demoFlow.stage;
     final activeTab = ref.watch(homeTabProvider);
     final controller = ref.read(rlTrainingProvider.notifier);
     if (demoStage != DemoFlowStage.strategy) {
       _handoffSheetShown = false;
     }
-    if (demoStage == DemoFlowStage.strategy &&
+    if (demoFlow.legacyStageCardsEnabled &&
+        demoStage == DemoFlowStage.strategy &&
         activeTab == HomeTab.strategy &&
         !_handoffSheetShown &&
         !_handoffSheetOpen &&
@@ -133,6 +139,36 @@ class _RlTrainingLinkageCardState extends ConsumerState<RlTrainingLinkageCard> {
           ),
           const SizedBox(height: 10),
           _DatasetEvidenceStrip(state: state),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: DemoActionTarget(
+                  actionId: 'rl-show-dataset',
+                  onAction: () => _openDatasetEvidence(state),
+                  builder: (context, onPressed) => OutlinedButton.icon(
+                    key: const ValueKey('rl-dataset-evidence'),
+                    onPressed: onPressed,
+                    icon: const Icon(Icons.dataset_outlined, size: 17),
+                    label: const Text('训练数据集'),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: DemoActionTarget(
+                  actionId: 'rl-show-contract',
+                  onAction: () => _openTrainingContract(state),
+                  builder: (context, onPressed) => OutlinedButton.icon(
+                    key: const ValueKey('rl-training-contract'),
+                    onPressed: onPressed,
+                    icon: const Icon(Icons.account_tree_outlined, size: 17),
+                    label: const Text('RL 训练契约'),
+                  ),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 12),
           _HumanGateRail(phase: state.phase),
           const SizedBox(height: 12),
@@ -148,16 +184,22 @@ class _RlTrainingLinkageCardState extends ConsumerState<RlTrainingLinkageCard> {
                   ),
                 ),
               ),
-              TextButton.icon(
-                onPressed:
-                    state.phase ==
-                            RlDesktopTrainingPhase.waitingDesktopApproval ||
-                        state.phase == RlDesktopTrainingPhase.training ||
-                        state.phase == RlDesktopTrainingPhase.evaluating
-                    ? null
-                    : controller.applyXiaoyiRecommendedConfig,
-                icon: const Icon(Icons.auto_awesome_rounded, size: 16),
-                label: const Text('小懿推荐默认参数'),
+              DemoActionTarget(
+                actionId: 'rl-xiaoyi-config',
+                onAction: controller.applyXiaoyiRecommendedConfig,
+                highlightRadius: 14,
+                builder: (context, onPressed) => TextButton.icon(
+                  key: const ValueKey('rl-xiaoyi-config'),
+                  onPressed:
+                      state.phase ==
+                              RlDesktopTrainingPhase.waitingDesktopApproval ||
+                          state.phase == RlDesktopTrainingPhase.training ||
+                          state.phase == RlDesktopTrainingPhase.evaluating
+                      ? null
+                      : onPressed,
+                  icon: const Icon(Icons.auto_awesome_rounded, size: 16),
+                  label: const Text('舷鸥推荐默认参数'),
+                ),
               ),
             ],
           ),
@@ -204,6 +246,20 @@ class _RlTrainingLinkageCardState extends ConsumerState<RlTrainingLinkageCard> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 9),
+          DemoActionTarget(
+            actionId: 'rl-open-handoff',
+            onAction: _openHandoffForDemo,
+            builder: (context, onPressed) => SizedBox(
+              width: double.infinity,
+              child: FilledButton.tonalIcon(
+                key: const ValueKey('rl-open-handoff'),
+                onPressed: onPressed,
+                icon: const Icon(Icons.sync_alt_rounded),
+                label: const Text('打开手机 × 电脑训练接力'),
+              ),
+            ),
           ),
           if (state.hasRequest ||
               state.phase == RlDesktopTrainingPhase.failed) ...[
@@ -288,12 +344,16 @@ class _RlTrainingLinkageCardState extends ConsumerState<RlTrainingLinkageCard> {
         isDismissible: false,
         enableDrag: false,
         backgroundColor: const Color(0xFF071226),
-        builder: (sheetContext) => _TrainingHandoffSheet(
-          onManualConfig: () =>
-              Navigator.of(sheetContext).pop(_HandoffSheetAction.manualConfig),
-          onSubmit: () =>
-              _submitTrainingRequest(ref.read(rlTrainingProvider.notifier)),
-          onClose: () => Navigator.of(sheetContext).pop(),
+        builder: (sheetContext) => _DemoStepSheetAutoClose(
+          stepId: 'handoff',
+          child: _TrainingHandoffSheet(
+            onManualConfig: () => Navigator.of(
+              sheetContext,
+            ).pop(_HandoffSheetAction.manualConfig),
+            onSubmit: () =>
+                _submitTrainingRequest(ref.read(rlTrainingProvider.notifier)),
+            onClose: () => Navigator.of(sheetContext).pop(),
+          ),
         ),
       );
       if (!mounted || action != _HandoffSheetAction.manualConfig) return;
@@ -313,6 +373,47 @@ class _RlTrainingLinkageCardState extends ConsumerState<RlTrainingLinkageCard> {
     } finally {
       _handoffSheetOpen = false;
     }
+  }
+
+  Future<void> _openHandoffForDemo() async {
+    final controller = ref.read(rlTrainingProvider.notifier);
+    final launched = await controller.runGuidedDesktopHandoff();
+    if (!launched && mounted) {
+      final state = ref.read(rlTrainingProvider);
+      throw StateError(state.errorMessage ?? '电脑端未能打开，可重试本步或使用保底下一步。');
+    }
+  }
+
+  Future<void> _openDatasetEvidence(RlTrainingState state) async {
+    unawaited(
+      showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        backgroundColor: const Color(0xFF071226),
+        builder: (_) => _DemoStepSheetAutoClose(
+          stepId: 'dataset',
+          child: _DatasetEvidenceSheet(state: state),
+        ),
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 180));
+  }
+
+  Future<void> _openTrainingContract(RlTrainingState state) async {
+    unawaited(
+      showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        backgroundColor: const Color(0xFF071226),
+        builder: (_) => _DemoStepSheetAutoClose(
+          stepId: 'contract',
+          child: _RlContractSheet(state: state),
+        ),
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 180));
   }
 
   Future<bool> _submitTrainingRequest(RlTrainingController controller) async {
@@ -395,7 +496,403 @@ class _RlTrainingLinkageCardState extends ConsumerState<RlTrainingLinkageCard> {
   };
 }
 
+class _DatasetEvidenceSheet extends StatelessWidget {
+  const _DatasetEvidenceSheet({required this.state});
+
+  final RlTrainingState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final datasetId = state.datasetId == '—'
+        ? preferredSharedDatasetId
+        : state.datasetId;
+    final rows = state.datasetRows > 0 ? state.datasetRows : 87459;
+    final trainRows = state.trainRows > 0 ? state.trainRows : 69967;
+    final testRows = state.testRows > 0 ? state.testRows : 17492;
+    final observations = state.independentSourceObservations > 0
+        ? state.independentSourceObservations
+        : 262347;
+    final digest = state.datasetSha256 == '—'
+        ? '9455a32251c521f567887f0205b0b5db4556801924d443ae1856db9ab4262897'
+        : state.datasetSha256;
+
+    return SafeArea(
+      child: FractionallySizedBox(
+        heightFactor: 0.9,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 860),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(22, 8, 22, 28),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const _SheetHeading(
+                    icon: Icons.dataset_outlined,
+                    title: '官方训练数据集',
+                    subtitle: '官方公开测量 + 明确声明的工程派生量',
+                  ),
+                  const SizedBox(height: 14),
+                  _EvidenceGrid(
+                    items: <(String, String)>[
+                      ('数据集 ID', datasetId),
+                      ('时间范围', '2021-01-01 00:00 — 2021-12-31 23:54 UTC'),
+                      ('数据规模', '$rows 个 6 分钟时步'),
+                      ('独立原始观测', '$observations 条'),
+                      ('时序切分', '训练 $trainRows / 留出测试 $testRows（不打乱）'),
+                      ('快照标识', 'SHA-256  $digest'),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const _EvidenceSection(
+                    title: '来源机构与官方地址',
+                    color: Color(0xFF65F5FF),
+                    lines: <String>[
+                      '美国交通部 BTS · 洛杉矶港月度 TEU',
+                      'https://data.bts.gov/resource/rd72-aq8r.json',
+                      'NOAA CO-OPS 9410660 · 经验证的 6 分钟水位',
+                      'NOAA CO-OPS 9410840 · 6 分钟气温与风速',
+                      'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter',
+                      '访问快照日：2026-07-25',
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  const _EvidenceSection(
+                    title: '授权与使用说明',
+                    color: Color(0xFF76F7C5),
+                    lines: <String>[
+                      '美国联邦政府原始数据通常属公共领域，仍须遵循 BTS / NOAA 条款、免责和归属指南。',
+                      '用途：可复现的离线 RL 基准与港口适配器验证。',
+                      '不得将该包表述为码头现场遥测或生产控制记录。',
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  const _EvidenceSection(
+                    title: '字段真实性分层',
+                    color: Color(0xFFFFC46B),
+                    lines: <String>[
+                      '官方测量：tide_m、ambient_c、wind_speed_mps。',
+                      '官方聚合：throughput_teu（月度 TEU）。',
+                      '校准/派生：6 分钟吞吐分配、到港、负荷、电价、碳因子、泊位/堆场占用、拥堵与冷藏箱负荷。',
+                      '不可用：能见度、浪高、流速、设备可用率、引航拖轮与封航标志，未用模拟值伪装实测。',
+                      '短缺口线性插值 42 条（气温 21，风速 21），单独登记。',
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RlContractSheet extends StatelessWidget {
+  const _RlContractSheet({required this.state});
+  final RlTrainingState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final config = state.config;
+    final observationDimensions = state.observationDimensions > 0
+        ? state.observationDimensions
+        : sharedObservationDimensions;
+    final actionDimensions = state.actionDimensions > 0
+        ? state.actionDimensions
+        : sharedActionDimensions;
+    return SafeArea(
+      child: FractionallySizedBox(
+        heightFactor: 0.9,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 900),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(22, 8, 22, 28),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const _SheetHeading(
+                    icon: Icons.account_tree_outlined,
+                    title: 'RL 训练契约',
+                    subtitle: '状态、动作、奖励、验证和安全门的可审计定义',
+                  ),
+                  const SizedBox(height: 14),
+                  _ContractBlock(
+                    label: 'STATE · $observationDimensions 维',
+                    color: const Color(0xFF65F5FF),
+                    text:
+                        '时间、吞吐、到港、水位、气温、风速、负荷、电价、碳因子、泊位/堆场占用、通道拥堵、冷藏箱负荷及时序特征。不可用因素通过可用性 mask 明确标记。',
+                  ),
+                  const SizedBox(height: 9),
+                  _ContractBlock(
+                    label: 'ACTION · $actionDimensions 维',
+                    color: const Color(0xFF8EBBFF),
+                    text:
+                        '泊位服务强度、堆场吞吐节拍、车辆/通道放行、设备负荷调节和冷藏箱负荷偏置。移动端输出仅为建议动作，不具备现场直接执行权。',
+                  ),
+                  const SizedBox(height: 9),
+                  _ContractBlock(
+                    label: 'REWARD · 综合多目标',
+                    color: const Color(0xFF76F7C5),
+                    text:
+                        '成本 ${config.costWeight.toStringAsFixed(2)} + 碳排 ${config.carbonWeight.toStringAsFixed(2)} + 峰值 ${config.peakWeight.toStringAsFixed(2)} + 安全 ${config.safetyWeight.toStringAsFixed(2)} + 延误余项。需量上限 ${config.demandCapKw.toStringAsFixed(0)} kW；约束越界、拥堵、低安全余量和违规动作进入惩罚项。',
+                  ),
+                  const SizedBox(height: 12),
+                  _EvidenceGrid(
+                    items: <(String, String)>[
+                      ('训练目标', config.objectiveLabel),
+                      ('算法', config.algorithmLabel),
+                      ('训练步数', '${config.totalSteps} steps'),
+                      (
+                        '批次 / 学习率',
+                        '${config.batchSize} / ${config.learningRate}',
+                      ),
+                      ('折扣因子 / 随机种子', '${config.gamma} / ${config.seed}'),
+                      ('数据切分', '时闶 80% 训练 + 20% 留出测试，不打乱'),
+                      ('验证方式', '10 回合确定性 Dry-run + 约束违规检查'),
+                      (
+                        '环境 / 端口画像',
+                        '${state.environmentVersion == '—' ? 'port_ops_v2' : state.environmentVersion} / ${state.portProfileId == '—' ? 'us_la_public_benchmark_v2' : state.portProfileId}',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const _EvidenceSection(
+                    title: '安全约束与人工确认门槛',
+                    color: Color(0xFFFFC46B),
+                    lines: <String>[
+                      '严格 guardrail：非有限值、动作越界、需量超限和低安全余量立即阻断或惩罚。',
+                      '手机端提交后不创建训练 Job；电脑端必须人工批准，才能启动无渲染 worker。',
+                      '训练完成只进入留出集回放与审计；production_authority=false，现场发布必须另行授权。',
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SheetHeading extends StatelessWidget {
+  const _SheetHeading({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      Container(
+        width: 46,
+        height: 46,
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF1769E0), Color(0xFF098F91)],
+          ),
+          borderRadius: BorderRadius.circular(15),
+        ),
+        child: Icon(icon, color: Colors.white),
+      ),
+      const SizedBox(width: 11),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              subtitle,
+              style: const TextStyle(color: Color(0xFF9DC8F8), fontSize: 11),
+            ),
+          ],
+        ),
+      ),
+      IconButton(
+        onPressed: () => Navigator.of(context).pop(),
+        icon: const Icon(Icons.close_rounded),
+        tooltip: '关闭',
+      ),
+    ],
+  );
+}
+
+class _EvidenceGrid extends StatelessWidget {
+  const _EvidenceGrid({required this.items});
+  final List<(String, String)> items;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final width = constraints.maxWidth >= 650
+          ? (constraints.maxWidth - 10) / 2
+          : constraints.maxWidth;
+      return Wrap(
+        spacing: 10,
+        runSpacing: 8,
+        children: [
+          for (final item in items)
+            SizedBox(
+              width: width,
+              child: Container(
+                padding: const EdgeInsets.all(11),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0A1830),
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(color: const Color(0xFF28466D)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.$1,
+                      style: const TextStyle(
+                        color: Color(0xFF7894BD),
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    SelectableText(
+                      item.$2,
+                      style: const TextStyle(
+                        color: Color(0xFFE1EEFF),
+                        fontSize: 11,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      );
+    },
+  );
+}
+
+class _EvidenceSection extends StatelessWidget {
+  const _EvidenceSection({
+    required this.title,
+    required this.color,
+    required this.lines,
+  });
+  final String title;
+  final Color color;
+  final List<String> lines;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(13),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.055),
+      borderRadius: BorderRadius.circular(15),
+      border: Border.all(color: color.withValues(alpha: 0.3)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            color: color,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 7),
+        for (final line in lines)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 5),
+            child: SelectableText(
+              '• $line',
+              style: const TextStyle(
+                color: Color(0xFFD2E5FF),
+                fontSize: 10.5,
+                height: 1.42,
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
+}
+
+class _ContractBlock extends StatelessWidget {
+  const _ContractBlock({
+    required this.label,
+    required this.color,
+    required this.text,
+  });
+  final String label;
+  final Color color;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(13),
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        colors: [color.withValues(alpha: 0.11), const Color(0xFF0A1830)],
+      ),
+      borderRadius: BorderRadius.circular(15),
+      border: Border.all(color: color.withValues(alpha: 0.35)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: color,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0.8,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          text,
+          style: const TextStyle(
+            color: Color(0xFFDCEAFF),
+            fontSize: 11,
+            height: 1.5,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 enum _HandoffSheetAction { manualConfig }
+
+class _DemoStepSheetAutoClose extends ConsumerWidget {
+  const _DemoStepSheetAutoClose({required this.stepId, required this.child});
+
+  final String stepId;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return DemoStepSurface(stepId: stepId, child: child);
+  }
+}
 
 class _TrainingHandoffSheet extends ConsumerWidget {
   const _TrainingHandoffSheet({
@@ -504,7 +1001,7 @@ class _TrainingHandoffSheet extends ConsumerWidget {
                           child: FilledButton.tonalIcon(
                             onPressed: controller.applyXiaoyiRecommendedConfig,
                             icon: const Icon(Icons.auto_awesome_rounded),
-                            label: const Text('使用小懿推荐参数'),
+                            label: const Text('使用舷鸥推荐参数'),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -622,7 +1119,7 @@ class _TrainingHandoffSheet extends ConsumerWidget {
                       const SizedBox(height: 7),
                       Text(
                         !parametersReady
-                            ? '请先选择“小懿推荐参数”或“手动配置参数”。'
+                            ? '请先选择“舷鸥推荐参数”或“手动配置参数”。'
                             : !state.sharedContractVerified
                             ? '请先完成共享 Web 后端的数据、算法与环境合同核验。'
                             : '请先启动电脑端系统，确认桌面审批页在线。',
@@ -639,9 +1136,13 @@ class _TrainingHandoffSheet extends ConsumerWidget {
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
-                  onPressed: state.hasRequest ? onClose : null,
+                  onPressed: onClose,
                   icon: const Icon(Icons.screen_share_outlined),
-                  label: const Text('申请已提交 · 切换到电脑端人工确认'),
+                  label: Text(
+                    state.hasRequest
+                        ? '申请已提交 · 关闭面板并切换到电脑端确认'
+                        : '关闭面板 · 返回演示引导',
+                  ),
                 ),
               ),
             ],

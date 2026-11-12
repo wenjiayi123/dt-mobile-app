@@ -2,6 +2,22 @@ import 'package:dt_mobile_app/features/home/application/shared_system_evidence_c
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('missing or nonfinite benchmark fields remain unknown rather than zero', () {
+    final evidence = SharedSystemEvidence.fromJson(<String, dynamic>{
+      'backend_id': 'port-dt-multi', 'shared_backend_verified': true,
+      'frontends': ['web', 'flutter_mobile'],
+      'business_benchmark': {'test_rows': 1.5, 'summary_metrics_percent': {
+        'berth_utilization_relative_improvement_percent': double.nan,
+        'average_waiting_time_reduction_percent': 0,
+      }},
+    });
+    expect(evidence.testRows, isNull);
+    expect(evidence.berthImprovementPercent, isNull);
+    expect(evidence.waitReductionPercent, 0);
+    expect(evidence.costReductionPercent, isNull);
+    expect(evidence.workflowOperations, isNull);
+    expect(evidence.auditChainValid, isNull);
+  });
   test('parses the current shared system evidence contract', () {
     final evidence = SharedSystemEvidence.fromJson(<String, dynamic>{
       'backend_id': 'port-dt-multi',

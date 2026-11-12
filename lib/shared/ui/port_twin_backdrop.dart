@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../core/platform/runtime_profile.dart';
+
 class PortTwinBackdrop extends StatefulWidget {
   const PortTwinBackdrop({super.key});
 
@@ -19,7 +21,7 @@ class _PortTwinBackdropState extends State<PortTwinBackdrop>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 7600),
-    )..repeat();
+    );
   }
 
   @override
@@ -27,7 +29,7 @@ class _PortTwinBackdropState extends State<PortTwinBackdrop>
     super.didChangeDependencies();
     final reduceMotion =
         MediaQuery.maybeOf(context)?.disableAnimations ?? false;
-    if (reduceMotion) {
+    if (reduceMotion || RuntimeProfile.reduceAmbientMotion) {
       _controller.stop();
       _controller.value = 0.34;
     } else if (!_controller.isAnimating) {
@@ -45,6 +47,8 @@ class _PortTwinBackdropState extends State<PortTwinBackdrop>
   Widget build(BuildContext context) {
     return IgnorePointer(
       child: RepaintBoundary(
+        // Isolate decorative painting from business controls. The desktop
+        // wrapper keeps this background static to leave frame time for input.
         child: AnimatedBuilder(
           animation: _controller,
           builder: (context, child) => CustomPaint(
